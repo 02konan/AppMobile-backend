@@ -1,8 +1,10 @@
 from datetime import datetime, timezone
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, current_app, jsonify, request
+from flask_jwt_extended import jwt_required
 
-from ..auth_utils import require_roles
+from .. import agora
+from ..auth_utils import current_user, require_roles
 from ..extensions import db
 from ..models import Live, Product, live_products
 
@@ -157,6 +159,60 @@ def set_current_product(user, live_id):
 
     db.session.commit()
     return jsonify(live.to_dict())
+
+
+@lives_bp.post("/<int:live_id>/token")
+@jwt_required(optional=True)
+def live_token(live_id):
+    """Jeton de salle Agora pour rejoindre un live.
+
+    - Le commerçant propriétaire peut demander un jeton `broadcaster`.
+    - Tout le monde (connecté ou non) peut obtenir un jeton `viewer`.
+    """
+    live = db.session.get(Live, live_id)
+    if live is None:
+        return jsonify({"error": "Live introuvable"}), 404
+
+    if not agora.is_configured():
+        return (
+            jsonify({"error": "Le streaming n'est pas configuré sur le serveur"}),
+            501,
+        )
+
+    requested_role = (request.args.get("role") or "viewer").lower()
+    user = current_user()
+    is_owner = (
+        user is not None
+        and user.shop is not None
+        and live.shop_id == user.shop.id
+    )
+
+    if requested_role == "broadcaster":
+        if not is_owner:
+            return (
+                jsonify({"error": "Seul le commerçant propriétaire peut diffuser"}),
+                403,
+            )
+        publisher = True
+        uid = user.id
+    else:
+        publisher = False
+        uid = user.id if user is not None else 0
+
+    channel = agora.channel_for_live(live_id)
+    token, ttl = agora.build_rtc_token(channel, uid, publisher=publisher)
+
+    return jsonify(
+        {
+            "provider": "agora",
+            "appId": current_app.config["AGORA_APP_ID"],
+            "channel": channel,
+            "uid": uid,
+            "role": "broadcaster" if publisher else "viewer",
+            "token": token,
+            "expiresIn": ttl,
+        }
+    )
 
 
 @lives_bp.post("/<int:live_id>/start")

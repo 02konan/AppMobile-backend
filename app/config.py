@@ -20,4 +20,10 @@ class Config:
     JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "change-me-in-production")
     JWT_ACCESS_TOKEN_EXPIRES = timedelta(days=7)
 
+    # Streaming vidéo (Agora) — laissés vides tant que le compte n'est pas créé.
+    AGORA_APP_ID = os.environ.get("AGORA_APP_ID", "")
+    AGORA_APP_CERTIFICATE = os.environ.get("AGORA_APP_CERTIFICATE", "")
+    # Durée de validité d'un jeton de salle (secondes).
+    AGORA_TOKEN_TTL = int(os.environ.get("AGORA_TOKEN_TTL", "3600"))
+
     JSON_SORT_KEYS = False
