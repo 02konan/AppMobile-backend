@@ -26,6 +26,9 @@ class Product(db.Model):
     __tablename__ = "products"
 
     id = db.Column(db.String(30), primary_key=True)
+    shop_id = db.Column(
+        db.Integer, db.ForeignKey("shops.id"), nullable=True
+    )
     category_id = db.Column(
         db.String(30), db.ForeignKey("categories.id"), nullable=False
     )
@@ -38,6 +41,7 @@ class Product(db.Model):
     review_count = db.Column(db.Integer, nullable=False, default=0)
     stock = db.Column(db.Integer, nullable=False, default=10)
     is_featured = db.Column(db.Boolean, nullable=False, default=False)
+    is_active = db.Column(db.Boolean, nullable=False, default=True)
     created_at = db.Column(db.DateTime, default=_utcnow)
     updated_at = db.Column(db.DateTime, default=_utcnow, onupdate=_utcnow)
 
@@ -53,6 +57,7 @@ class Product(db.Model):
         old_price = float(self.old_price) if self.old_price is not None else None
         return {
             "id": self.id,
+            "shopId": self.shop_id,
             "categoryId": self.category_id,
             "name": self.name,
             "description": self.description,
@@ -64,6 +69,7 @@ class Product(db.Model):
             "stock": self.stock,
             "inStock": self.stock > 0,
             "isFeatured": bool(self.is_featured),
+            "isActive": bool(self.is_active),
             "colors": [c.color for c in self.colors],
             "sizes": [s.size for s in self.sizes],
         }
@@ -94,12 +100,19 @@ class User(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(150), nullable=False)
-    email = db.Column(db.String(150), nullable=False, unique=True)
+    role = db.Column(
+        db.Enum("buyer", "merchant", "admin", name="user_role"),
+        nullable=False,
+        default="buyer",
+    )
+    email = db.Column(db.String(150), nullable=True, unique=True)
     password_hash = db.Column(db.String(255), nullable=False)
-    phone = db.Column(db.String(30), nullable=True)
+    phone = db.Column(db.String(30), nullable=True, unique=True)
     address = db.Column(db.String(255), nullable=True)
     avatar_url = db.Column(db.String(500), nullable=True)
     created_at = db.Column(db.DateTime, default=_utcnow)
+
+    shop = db.relationship("Shop", backref="owner", uselist=False, lazy=True)
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -111,10 +124,12 @@ class User(db.Model):
         return {
             "id": self.id,
             "name": self.name,
+            "role": self.role,
             "email": self.email,
             "phone": self.phone,
             "address": self.address,
             "avatarUrl": self.avatar_url,
+            "shopId": self.shop.id if self.shop else None,
         }
 
 
@@ -225,3 +240,129 @@ class OrderItem(db.Model):
             "selectedSize": self.selected_size,
             "totalPrice": round(float(self.unit_price) * self.quantity, 2),
         }
+
+
+# ============================================================
+# DIVIX LIVE — boutiques & lives
+# ============================================================
+
+
+class Shop(db.Model):
+    __tablename__ = "shops"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(
+        db.Integer, db.ForeignKey("users.id"), nullable=False, unique=True
+    )
+    name = db.Column(db.String(150), nullable=False)
+    logo_url = db.Column(db.String(500), nullable=True)
+    description = db.Column(db.Text, nullable=True)
+    phone = db.Column(db.String(30), nullable=True)
+    whatsapp = db.Column(db.String(30), nullable=True)
+    address = db.Column(db.String(255), nullable=True)
+    commune = db.Column(db.String(100), nullable=True)
+    hours = db.Column(db.String(255), nullable=True)
+    category = db.Column(db.String(100), nullable=True)
+    status = db.Column(
+        db.Enum("pending", "validated", "suspended", name="shop_status"),
+        nullable=False,
+        default="pending",
+    )
+    created_at = db.Column(db.DateTime, default=_utcnow)
+    updated_at = db.Column(db.DateTime, default=_utcnow, onupdate=_utcnow)
+
+    products = db.relationship("Product", backref="shop", lazy=True)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "userId": self.user_id,
+            "name": self.name,
+            "logoUrl": self.logo_url,
+            "description": self.description,
+            "phone": self.phone,
+            "whatsapp": self.whatsapp,
+            "address": self.address,
+            "commune": self.commune,
+            "hours": self.hours,
+            "category": self.category,
+            "status": self.status,
+        }
+
+
+# Produits sélectionnés pour un live (association many-to-many + position)
+live_products = db.Table(
+    "live_products",
+    db.Column(
+        "live_id", db.Integer, db.ForeignKey("lives.id"), primary_key=True
+    ),
+    db.Column(
+        "product_id",
+        db.String(30),
+        db.ForeignKey("products.id"),
+        primary_key=True,
+    ),
+    db.Column("position", db.Integer, nullable=False, default=0),
+)
+
+
+class Live(db.Model):
+    __tablename__ = "lives"
+
+    id = db.Column(db.Integer, primary_key=True)
+    shop_id = db.Column(db.Integer, db.ForeignKey("shops.id"), nullable=False)
+    title = db.Column(db.String(150), nullable=False)
+    description = db.Column(db.Text, nullable=True)
+    category = db.Column(db.String(100), nullable=True)
+    scheduled_at = db.Column(db.DateTime, nullable=True)
+    status = db.Column(
+        db.Enum("scheduled", "live", "ended", name="live_status"),
+        nullable=False,
+        default="scheduled",
+    )
+    current_product_id = db.Column(
+        db.String(30), db.ForeignKey("products.id"), nullable=True
+    )
+    viewer_count = db.Column(db.Integer, nullable=False, default=0)
+    playback_url = db.Column(db.String(500), nullable=True)
+    started_at = db.Column(db.DateTime, nullable=True)
+    ended_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=_utcnow)
+    updated_at = db.Column(db.DateTime, default=_utcnow, onupdate=_utcnow)
+
+    shop = db.relationship("Shop", lazy=True)
+    products = db.relationship(
+        "Product",
+        secondary=live_products,
+        order_by=live_products.c.position,
+        lazy=True,
+    )
+    current_product = db.relationship(
+        "Product", foreign_keys=[current_product_id], lazy=True
+    )
+
+    def to_dict(self, with_products=False):
+        data = {
+            "id": self.id,
+            "shopId": self.shop_id,
+            "shopName": self.shop.name if self.shop else None,
+            "title": self.title,
+            "description": self.description,
+            "category": self.category,
+            "scheduledAt": self.scheduled_at.isoformat()
+            if self.scheduled_at
+            else None,
+            "status": self.status,
+            "currentProductId": self.current_product_id,
+            "currentProduct": self.current_product.to_dict()
+            if self.current_product
+            else None,
+            "viewerCount": self.viewer_count,
+            "playbackUrl": self.playback_url,
+            "startedAt": self.started_at.isoformat() if self.started_at else None,
+            "endedAt": self.ended_at.isoformat() if self.ended_at else None,
+            "productCount": len(self.products),
+        }
+        if with_products:
+            data["products"] = [p.to_dict() for p in self.products]
+        return data

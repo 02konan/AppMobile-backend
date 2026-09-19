@@ -23,8 +23,11 @@ CREATE TABLE categories (
 -- ------------------------------------------------------------
 -- Produits (Product)
 -- ------------------------------------------------------------
+-- Note : la clé étrangère products.shop_id -> shops est ajoutée en fin de
+-- fichier, car la table shops est déclarée après products.
 CREATE TABLE products (
   id            VARCHAR(30)    NOT NULL,
+  shop_id       INT UNSIGNED   NULL,
   category_id   VARCHAR(30)    NOT NULL,
   name          VARCHAR(150)   NOT NULL,
   description   TEXT           NOT NULL,
@@ -35,12 +38,15 @@ CREATE TABLE products (
   review_count  INT UNSIGNED   NOT NULL DEFAULT 0,
   stock         INT UNSIGNED   NOT NULL DEFAULT 10,
   is_featured   TINYINT(1)     NOT NULL DEFAULT 0,
+  is_active     TINYINT(1)     NOT NULL DEFAULT 1,
   created_at    TIMESTAMP      NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at    TIMESTAMP      NOT NULL DEFAULT CURRENT_TIMESTAMP
                                ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   KEY idx_products_category (category_id),
   KEY idx_products_featured (is_featured),
+  KEY idx_products_shop (shop_id),
+  KEY idx_products_active (is_active),
   CONSTRAINT fk_products_category
     FOREIGN KEY (category_id) REFERENCES categories (id)
     ON DELETE RESTRICT ON UPDATE CASCADE
@@ -76,15 +82,51 @@ CREATE TABLE product_sizes (
 CREATE TABLE users (
   id             INT UNSIGNED AUTO_INCREMENT,
   name           VARCHAR(150) NOT NULL,
-  email          VARCHAR(150) NOT NULL,
+  role           ENUM('buyer','merchant','admin') NOT NULL DEFAULT 'buyer',
+  email          VARCHAR(150) NULL,
   password_hash  VARCHAR(255) NOT NULL,
   phone          VARCHAR(30)  NULL,
   address        VARCHAR(255) NULL,
   avatar_url     VARCHAR(500) NULL,
   created_at     TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
-  UNIQUE KEY uq_users_email (email)
+  UNIQUE KEY uq_users_email (email),
+  UNIQUE KEY uq_users_phone (phone)
 ) ENGINE=InnoDB;
+
+-- ------------------------------------------------------------
+-- Boutiques (une par commerçant) — DIVIX LIVE
+-- ------------------------------------------------------------
+CREATE TABLE shops (
+  id           INT UNSIGNED AUTO_INCREMENT,
+  user_id      INT UNSIGNED NOT NULL,
+  name         VARCHAR(150) NOT NULL,
+  logo_url     VARCHAR(500) NULL,
+  description  TEXT         NULL,
+  phone        VARCHAR(30)  NULL,
+  whatsapp     VARCHAR(30)  NULL,
+  address      VARCHAR(255) NULL,
+  commune      VARCHAR(100) NULL,
+  hours        VARCHAR(255) NULL,
+  category     VARCHAR(100) NULL,
+  status       ENUM('pending','validated','suspended')
+               NOT NULL DEFAULT 'pending',
+  created_at   TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at   TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
+                            ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_shops_user (user_id),
+  KEY idx_shops_status (status),
+  CONSTRAINT fk_shops_user
+    FOREIGN KEY (user_id) REFERENCES users (id)
+    ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB;
+
+-- Clé étrangère produits -> boutique (shops existe désormais)
+ALTER TABLE products
+  ADD CONSTRAINT fk_products_shop
+    FOREIGN KEY (shop_id) REFERENCES shops (id)
+    ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- ------------------------------------------------------------
 -- Favoris (FavoritesProvider)
@@ -171,4 +213,51 @@ CREATE TABLE order_items (
   CONSTRAINT fk_order_items_product
     FOREIGN KEY (product_id) REFERENCES products (id)
     ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB;
+
+-- ------------------------------------------------------------
+-- Lives (DIVIX LIVE) — la vidéo est gérée par un service externe ;
+-- Flask ne stocke que les métadonnées du live.
+-- ------------------------------------------------------------
+CREATE TABLE lives (
+  id                  INT UNSIGNED AUTO_INCREMENT,
+  shop_id             INT UNSIGNED NOT NULL,
+  title               VARCHAR(150) NOT NULL,
+  description         TEXT         NULL,
+  category            VARCHAR(100) NULL,
+  scheduled_at        DATETIME     NULL,
+  status              ENUM('scheduled','live','ended')
+                      NOT NULL DEFAULT 'scheduled',
+  current_product_id  VARCHAR(30)  NULL,
+  viewer_count        INT UNSIGNED NOT NULL DEFAULT 0,
+  playback_url        VARCHAR(500) NULL,
+  started_at          DATETIME     NULL,
+  ended_at            DATETIME     NULL,
+  created_at          TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at          TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
+                                   ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_lives_shop (shop_id),
+  KEY idx_lives_status (status),
+  CONSTRAINT fk_lives_shop
+    FOREIGN KEY (shop_id) REFERENCES shops (id)
+    ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT fk_lives_current_product
+    FOREIGN KEY (current_product_id) REFERENCES products (id)
+    ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB;
+
+-- Produits sélectionnés pour un live
+CREATE TABLE live_products (
+  live_id     INT UNSIGNED NOT NULL,
+  product_id  VARCHAR(30)  NOT NULL,
+  position    INT UNSIGNED NOT NULL DEFAULT 0,
+  PRIMARY KEY (live_id, product_id),
+  KEY idx_live_products_live (live_id),
+  CONSTRAINT fk_live_products_live
+    FOREIGN KEY (live_id) REFERENCES lives (id)
+    ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT fk_live_products_product
+    FOREIGN KEY (product_id) REFERENCES products (id)
+    ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB;
