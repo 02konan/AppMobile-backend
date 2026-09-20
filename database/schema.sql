@@ -82,7 +82,7 @@ CREATE TABLE product_sizes (
 CREATE TABLE users (
   id             INT UNSIGNED AUTO_INCREMENT,
   name           VARCHAR(150) NOT NULL,
-  role           ENUM('buyer','merchant','admin') NOT NULL DEFAULT 'buyer',
+  role           ENUM('buyer','merchant','admin','driver') NOT NULL DEFAULT 'buyer',
   email          VARCHAR(150) NULL,
   password_hash  VARCHAR(255) NOT NULL,
   phone          VARCHAR(30)  NULL,
@@ -294,5 +294,53 @@ CREATE TABLE live_messages (
     ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT fk_live_messages_user
     FOREIGN KEY (user_id) REFERENCES users (id)
+    ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB;
+
+-- ============================================================
+-- DIVIX LIVE — livraisons & signalements
+-- ============================================================
+
+-- Livraisons (une par commande, prise en charge par un livreur)
+CREATE TABLE deliveries (
+  id            INT UNSIGNED AUTO_INCREMENT,
+  order_id      INT UNSIGNED NOT NULL,
+  driver_id     INT UNSIGNED NULL,
+  status        ENUM('unassigned','assigned','picked_up','delivering','delivered','failed')
+                NOT NULL DEFAULT 'unassigned',
+  fee           DECIMAL(10,2) NOT NULL DEFAULT 0,
+  notes         VARCHAR(500) NULL,
+  assigned_at   DATETIME NULL,
+  picked_up_at  DATETIME NULL,
+  delivered_at  DATETIME NULL,
+  created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_deliveries_order (order_id),
+  KEY idx_deliveries_driver (driver_id, status),
+  CONSTRAINT fk_deliveries_order
+    FOREIGN KEY (order_id) REFERENCES orders (id)
+    ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT fk_deliveries_driver
+    FOREIGN KEY (driver_id) REFERENCES users (id)
+    ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB;
+
+-- Signalements de contenus abusifs
+CREATE TABLE reports (
+  id           INT UNSIGNED AUTO_INCREMENT,
+  reporter_id  INT UNSIGNED NULL,
+  target_type  ENUM('product','live','shop','user') NOT NULL,
+  target_id    VARCHAR(30) NOT NULL,
+  reason       VARCHAR(100) NOT NULL,
+  message      VARCHAR(1000) NULL,
+  status       ENUM('open','reviewing','resolved','dismissed') NOT NULL DEFAULT 'open',
+  created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  resolved_at  DATETIME NULL,
+  PRIMARY KEY (id),
+  KEY idx_reports_status (status, created_at),
+  KEY idx_reports_target (target_type, target_id),
+  CONSTRAINT fk_reports_reporter
+    FOREIGN KEY (reporter_id) REFERENCES users (id)
     ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB;

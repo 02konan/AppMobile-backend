@@ -6,7 +6,7 @@ from ..models import Shop, User
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/api/auth")
 
-VALID_ROLES = ("buyer", "merchant")
+VALID_ROLES = ("buyer", "merchant", "driver")
 
 
 @auth_bp.post("/register")

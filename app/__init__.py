@@ -6,11 +6,13 @@ from .extensions import db, jwt
 from .routes.auth import auth_bp
 from .routes.cart import cart_bp
 from .routes.categories import categories_bp
+from .routes.deliveries import deliveries_bp
 from .routes.favorites import favorites_bp
 from .routes.health import health_bp
 from .routes.lives import lives_bp
 from .routes.orders import orders_bp
 from .routes.products import products_bp
+from .routes.reports import reports_bp
 from .routes.shops import shops_bp
 
 
@@ -31,6 +33,8 @@ def create_app(config_class=Config):
     app.register_blueprint(orders_bp)
     app.register_blueprint(shops_bp)
     app.register_blueprint(lives_bp)
+    app.register_blueprint(deliveries_bp)
+    app.register_blueprint(reports_bp)
 
     @app.errorhandler(404)
     def not_found(_error):

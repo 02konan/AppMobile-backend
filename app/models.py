@@ -101,7 +101,7 @@ class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(150), nullable=False)
     role = db.Column(
-        db.Enum("buyer", "merchant", "admin", name="user_role"),
+        db.Enum("buyer", "merchant", "admin", "driver", name="user_role"),
         nullable=False,
         default="buyer",
     )
@@ -214,6 +214,14 @@ class Order(db.Model):
         "OrderItem", backref="order", lazy=True, cascade="all, delete-orphan"
     )
     user = db.relationship("User", lazy=True)
+    shop = db.relationship("Shop", lazy=True)
+    delivery = db.relationship(
+        "Delivery",
+        backref="order",
+        uselist=False,
+        lazy=True,
+        cascade="all, delete-orphan",
+    )
 
     # Libellés français des statuts (workflow DIVIX)
     STATUS_LABELS = {
@@ -245,6 +253,7 @@ class Order(db.Model):
             "paymentMethod": self.payment_method,
             "status": self.status,
             "statusLabel": self.STATUS_LABELS.get(self.status, self.status),
+            "delivery": self.delivery.to_dict() if self.delivery else None,
             "items": [item.to_dict() for item in self.items],
         }
 
@@ -424,4 +433,146 @@ class LiveMessage(db.Model):
             "userName": self.user_name,
             "message": self.message,
             "date": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+# ============================================================
+# DIVIX LIVE — livraisons & signalements
+# ============================================================
+
+
+class Delivery(db.Model):
+    """Livraison d'une commande, prise en charge par un livreur.
+
+    Reliée 1:1 à une commande. Les statuts suivent le trajet du colis :
+    non affectée → affectée → récupérée → en livraison → livrée (ou échouée).
+    Les changements de statut synchronisent le statut de la commande.
+    """
+
+    __tablename__ = "deliveries"
+
+    STATUS_LABELS = {
+        "unassigned": "À affecter",
+        "assigned": "Affectée",
+        "picked_up": "Récupérée",
+        "delivering": "En livraison",
+        "delivered": "Livrée",
+        "failed": "Échouée",
+    }
+
+    # Statut de livraison -> statut de commande correspondant (synchro).
+    ORDER_STATUS_SYNC = {
+        "picked_up": "picked_up",
+        "delivering": "delivering",
+        "delivered": "delivered",
+    }
+
+    id = db.Column(db.Integer, primary_key=True)
+    order_id = db.Column(
+        db.Integer, db.ForeignKey("orders.id"), nullable=False, unique=True
+    )
+    driver_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
+    status = db.Column(
+        db.Enum(
+            "unassigned",
+            "assigned",
+            "picked_up",
+            "delivering",
+            "delivered",
+            "failed",
+            name="delivery_status",
+        ),
+        nullable=False,
+        default="unassigned",
+    )
+    fee = db.Column(db.Numeric(10, 2), nullable=False, default=0)
+    notes = db.Column(db.String(500), nullable=True)
+    assigned_at = db.Column(db.DateTime, nullable=True)
+    picked_up_at = db.Column(db.DateTime, nullable=True)
+    delivered_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=_utcnow)
+    updated_at = db.Column(db.DateTime, default=_utcnow, onupdate=_utcnow)
+
+    driver = db.relationship("User", lazy=True)
+
+    def to_dict(self, with_order=False):
+        data = {
+            "id": self.id,
+            "orderId": self.order_id,
+            "driverId": self.driver_id,
+            "driverName": self.driver.name if self.driver else None,
+            "driverPhone": self.driver.phone if self.driver else None,
+            "status": self.status,
+            "statusLabel": self.STATUS_LABELS.get(self.status, self.status),
+            "fee": float(self.fee) if self.fee is not None else 0.0,
+            "notes": self.notes,
+            "assignedAt": self.assigned_at.isoformat() if self.assigned_at else None,
+            "pickedUpAt": self.picked_up_at.isoformat()
+            if self.picked_up_at
+            else None,
+            "deliveredAt": self.delivered_at.isoformat()
+            if self.delivered_at
+            else None,
+            "createdAt": self.created_at.isoformat() if self.created_at else None,
+        }
+        if with_order and self.order is not None:
+            data["order"] = self.order.to_dict()
+        return data
+
+
+class Report(db.Model):
+    """Signalement d'un contenu (produit, live, boutique ou utilisateur)
+    par un utilisateur, à traiter par l'administration."""
+
+    __tablename__ = "reports"
+
+    STATUS_LABELS = {
+        "open": "Ouvert",
+        "reviewing": "En cours",
+        "resolved": "Résolu",
+        "dismissed": "Rejeté",
+    }
+
+    TARGET_LABELS = {
+        "product": "Produit",
+        "live": "Live",
+        "shop": "Boutique",
+        "user": "Utilisateur",
+    }
+
+    id = db.Column(db.Integer, primary_key=True)
+    reporter_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
+    target_type = db.Column(
+        db.Enum("product", "live", "shop", "user", name="report_target"),
+        nullable=False,
+    )
+    target_id = db.Column(db.String(30), nullable=False)
+    reason = db.Column(db.String(100), nullable=False)
+    message = db.Column(db.String(1000), nullable=True)
+    status = db.Column(
+        db.Enum("open", "reviewing", "resolved", "dismissed", name="report_status"),
+        nullable=False,
+        default="open",
+    )
+    created_at = db.Column(db.DateTime, default=_utcnow)
+    resolved_at = db.Column(db.DateTime, nullable=True)
+
+    reporter = db.relationship("User", lazy=True)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "reporterId": self.reporter_id,
+            "reporterName": self.reporter.name if self.reporter else None,
+            "targetType": self.target_type,
+            "targetTypeLabel": self.TARGET_LABELS.get(
+                self.target_type, self.target_type
+            ),
+            "targetId": self.target_id,
+            "reason": self.reason,
+            "message": self.message,
+            "status": self.status,
+            "statusLabel": self.STATUS_LABELS.get(self.status, self.status),
+            "createdAt": self.created_at.isoformat() if self.created_at else None,
+            "resolvedAt": self.resolved_at.isoformat() if self.resolved_at else None,
         }
