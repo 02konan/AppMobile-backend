@@ -6,7 +6,7 @@ from flask_jwt_extended import jwt_required
 from .. import agora
 from ..auth_utils import current_user, require_roles
 from ..extensions import db
-from ..models import Live, Product, live_products
+from ..models import Live, LiveMessage, Product, live_products
 
 lives_bp = Blueprint("lives", __name__, url_prefix="/api/lives")
 
@@ -159,6 +159,45 @@ def set_current_product(user, live_id):
 
     db.session.commit()
     return jsonify(live.to_dict())
+
+
+@lives_bp.get("/<int:live_id>/messages")
+def list_messages(live_id):
+    """Messages du chat d'un live. ?after=<id> pour ne récupérer que les
+    nouveaux (interrogation périodique côté app)."""
+    if db.session.get(Live, live_id) is None:
+        return jsonify({"error": "Live introuvable"}), 404
+    query = LiveMessage.query.filter_by(live_id=live_id)
+    after = request.args.get("after", type=int)
+    if after:
+        query = query.filter(LiveMessage.id > after)
+    messages = query.order_by(LiveMessage.id).limit(100).all()
+    return jsonify([m.to_dict() for m in messages])
+
+
+@lives_bp.post("/<int:live_id>/messages")
+@jwt_required()
+def post_message(live_id):
+    user = current_user()
+    if user is None:
+        return jsonify({"error": "Utilisateur introuvable"}), 404
+    if db.session.get(Live, live_id) is None:
+        return jsonify({"error": "Live introuvable"}), 404
+
+    text = ((request.get_json(silent=True) or {}).get("message") or "").strip()
+    if not text:
+        return jsonify({"error": "Message vide"}), 400
+    text = text[:500]
+
+    msg = LiveMessage(
+        live_id=live_id,
+        user_id=user.id,
+        user_name=user.name,
+        message=text,
+    )
+    db.session.add(msg)
+    db.session.commit()
+    return jsonify(msg.to_dict()), 201
 
 
 @lives_bp.post("/<int:live_id>/token")

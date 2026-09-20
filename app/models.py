@@ -375,6 +375,10 @@ class Live(db.Model):
         "Product", foreign_keys=[current_product_id], lazy=True
     )
 
+    messages = db.relationship(
+        "LiveMessage", backref="live", lazy=True, cascade="all, delete-orphan"
+    )
+
     def to_dict(self, with_products=False):
         data = {
             "id": self.id,
@@ -400,3 +404,24 @@ class Live(db.Model):
         if with_products:
             data["products"] = [p.to_dict() for p in self.products]
         return data
+
+
+class LiveMessage(db.Model):
+    __tablename__ = "live_messages"
+
+    id = db.Column(db.Integer, primary_key=True)
+    live_id = db.Column(db.Integer, db.ForeignKey("lives.id"), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
+    user_name = db.Column(db.String(150), nullable=False)
+    message = db.Column(db.String(500), nullable=False)
+    created_at = db.Column(db.DateTime, default=_utcnow)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "liveId": self.live_id,
+            "userId": self.user_id,
+            "userName": self.user_name,
+            "message": self.message,
+            "date": self.created_at.isoformat() if self.created_at else None,
+        }
