@@ -179,19 +179,33 @@ class Order(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     order_number = db.Column(db.String(30), nullable=False, unique=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    shop_id = db.Column(db.Integer, db.ForeignKey("shops.id"), nullable=True)
+    live_id = db.Column(db.Integer, db.ForeignKey("lives.id"), nullable=True)
     subtotal = db.Column(db.Numeric(10, 2), nullable=False)
     shipping_cost = db.Column(db.Numeric(10, 2), nullable=False, default=0)
     total = db.Column(db.Numeric(10, 2), nullable=False)
     shipping_address = db.Column(db.String(255), nullable=False)
+    customer_phone = db.Column(db.String(30), nullable=True)
     payment_method = db.Column(
-        db.Enum("card", "paypal", "cash", name="payment_method"),
+        db.Enum("card", "paypal", "cash", "whatsapp", name="payment_method"),
         nullable=False,
-        default="card",
+        default="whatsapp",
     )
     status = db.Column(
-        db.Enum("processing", "shipped", "delivered", name="order_status"),
+        db.Enum(
+            "pending",
+            "confirmed",
+            "preparing",
+            "ready",
+            "picked_up",
+            "delivering",
+            "delivered",
+            "refused",
+            "cancelled",
+            name="order_status",
+        ),
         nullable=False,
-        default="processing",
+        default="pending",
     )
     created_at = db.Column(db.DateTime, default=_utcnow)
     updated_at = db.Column(db.DateTime, default=_utcnow, onupdate=_utcnow)
@@ -199,18 +213,38 @@ class Order(db.Model):
     items = db.relationship(
         "OrderItem", backref="order", lazy=True, cascade="all, delete-orphan"
     )
+    user = db.relationship("User", lazy=True)
+
+    # Libellés français des statuts (workflow DIVIX)
+    STATUS_LABELS = {
+        "pending": "En attente",
+        "confirmed": "Confirmée",
+        "preparing": "En préparation",
+        "ready": "Prête",
+        "picked_up": "Récupérée",
+        "delivering": "En livraison",
+        "delivered": "Livrée",
+        "refused": "Refusée",
+        "cancelled": "Annulée",
+    }
 
     def to_dict(self):
         return {
             "id": self.id,
             "orderNumber": self.order_number,
+            "userId": self.user_id,
+            "shopId": self.shop_id,
+            "liveId": self.live_id,
+            "customerName": self.user.name if self.user else None,
             "date": self.created_at.isoformat() if self.created_at else None,
             "subtotal": float(self.subtotal),
             "shippingCost": float(self.shipping_cost),
             "total": float(self.total),
             "shippingAddress": self.shipping_address,
+            "customerPhone": self.customer_phone,
             "paymentMethod": self.payment_method,
             "status": self.status,
+            "statusLabel": self.STATUS_LABELS.get(self.status, self.status),
             "items": [item.to_dict() for item in self.items],
         }
 

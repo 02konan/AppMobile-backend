@@ -2,7 +2,7 @@ from flask import Blueprint, jsonify, request
 
 from ..auth_utils import require_roles
 from ..extensions import db
-from ..models import Category, Product, ProductColor, ProductSize, Shop
+from ..models import Category, Order, Product, ProductColor, ProductSize, Shop
 
 shops_bp = Blueprint("shops", __name__, url_prefix="/api/shops")
 
@@ -78,6 +78,20 @@ def update_my_shop(user):
 
     db.session.commit()
     return jsonify(shop.to_dict())
+
+
+@shops_bp.get("/orders")
+@require_roles("merchant")
+def my_shop_orders(user):
+    """Commandes reçues par la boutique du commerçant (récentes d'abord)."""
+    if user.shop is None:
+        return jsonify({"error": "Aucune boutique pour ce compte"}), 404
+    query = Order.query.filter_by(shop_id=user.shop.id)
+    status = request.args.get("status")
+    if status:
+        query = query.filter_by(status=status)
+    orders = query.order_by(Order.created_at.desc()).all()
+    return jsonify([o.to_dict() for o in orders])
 
 
 @shops_bp.get("/<int:shop_id>")

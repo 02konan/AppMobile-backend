@@ -175,22 +175,33 @@ CREATE TABLE orders (
   id                 INT UNSIGNED AUTO_INCREMENT,
   order_number       VARCHAR(30)    NOT NULL,
   user_id            INT UNSIGNED   NOT NULL,
+  shop_id            INT UNSIGNED   NULL,
+  live_id            INT UNSIGNED   NULL,   -- FK ajoutée en fin de fichier
   subtotal           DECIMAL(10,2)  NOT NULL,
   shipping_cost      DECIMAL(10,2)  NOT NULL DEFAULT 0.00,
   total              DECIMAL(10,2)  NOT NULL,
   shipping_address   VARCHAR(255)   NOT NULL,
-  payment_method     ENUM('card','paypal','cash') NOT NULL DEFAULT 'card',
-  status             ENUM('processing','shipped','delivered')
-                     NOT NULL DEFAULT 'processing',
+  customer_phone     VARCHAR(30)    NULL,
+  payment_method     ENUM('card','paypal','cash','whatsapp')
+                     NOT NULL DEFAULT 'whatsapp',
+  status             ENUM('pending','confirmed','preparing','ready',
+                          'picked_up','delivering','delivered',
+                          'refused','cancelled')
+                     NOT NULL DEFAULT 'pending',
   created_at         TIMESTAMP      NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at         TIMESTAMP      NOT NULL DEFAULT CURRENT_TIMESTAMP
                                     ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   UNIQUE KEY uq_orders_number (order_number),
   KEY idx_orders_user (user_id),
+  KEY idx_orders_shop (shop_id),
+  KEY idx_orders_live (live_id),
   CONSTRAINT fk_orders_user
     FOREIGN KEY (user_id) REFERENCES users (id)
-    ON DELETE CASCADE ON UPDATE CASCADE
+    ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT fk_orders_shop
+    FOREIGN KEY (shop_id) REFERENCES shops (id)
+    ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB;
 
 -- Lignes de commande (CartItem au moment de la commande)
@@ -261,3 +272,9 @@ CREATE TABLE live_products (
     FOREIGN KEY (product_id) REFERENCES products (id)
     ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB;
+
+-- Clé étrangère commandes -> live (lives existe désormais)
+ALTER TABLE orders
+  ADD CONSTRAINT fk_orders_live
+    FOREIGN KEY (live_id) REFERENCES lives (id)
+    ON DELETE SET NULL ON UPDATE CASCADE;
