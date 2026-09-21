@@ -1,21 +1,54 @@
 import random
 import string
+from urllib.parse import quote
 
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 
+from ..auth_utils import current_user
 from ..extensions import db
-from ..models import CartItem, Order, OrderItem
+from ..models import Live, Order, OrderItem, Product
 
 orders_bp = Blueprint("orders", __name__, url_prefix="/api/orders")
 
-FREE_SHIPPING_THRESHOLD = 50.0
-SHIPPING_COST = 4.99
-VALID_PAYMENT_METHODS = ("card", "paypal", "cash")
+ORDER_STATUSES = (
+    "pending",
+    "confirmed",
+    "preparing",
+    "ready",
+    "picked_up",
+    "delivering",
+    "delivered",
+    "refused",
+    "cancelled",
+)
 
 
 def _generate_order_number():
-    return "CMD-" + "".join(random.choices(string.digits, k=6))
+    return "DLV-" + "".join(random.choices(string.digits, k=6))
+
+
+def _unique_order_number():
+    number = _generate_order_number()
+    while Order.query.filter_by(order_number=number).first() is not None:
+        number = _generate_order_number()
+    return number
+
+
+def _whatsapp_url(shop, order, item):
+    """Lien wa.me pré-rempli vers la boutique (paiement WhatsApp du MVP)."""
+    if shop is None:
+        return None
+    raw = shop.whatsapp or shop.phone or ""
+    number = "".join(ch for ch in raw if ch.isdigit())
+    if not number:
+        return None
+    message = (
+        f"Bonjour, je souhaite commander {item.product_name} "
+        f"(x{item.quantity}) — commande {order.order_number} "
+        f"présentée dans votre live DIVIX."
+    )
+    return f"https://wa.me/{number}?text={quote(message)}"
 
 
 @orders_bp.get("")
@@ -33,66 +66,105 @@ def list_orders():
 @orders_bp.get("/<int:order_id>")
 @jwt_required()
 def get_order(order_id):
-    user_id = int(get_jwt_identity())
-    order = Order.query.filter_by(id=order_id, user_id=user_id).first()
+    user = current_user()
+    order = db.session.get(Order, order_id)
     if order is None:
         return jsonify({"error": "Commande introuvable"}), 404
+    # L'acheteur ou le commerçant propriétaire de la boutique peut consulter.
+    is_buyer = order.user_id == user.id
+    is_shop_owner = user.shop is not None and order.shop_id == user.shop.id
+    if not (is_buyer or is_shop_owner):
+        return jsonify({"error": "Accès refusé"}), 403
     return jsonify(order.to_dict())
 
 
 @orders_bp.post("")
 @jwt_required()
 def place_order():
+    """Commande d'un produit (typiquement acheté pendant un live)."""
     user_id = int(get_jwt_identity())
     data = request.get_json(silent=True) or {}
+
+    product_id = (data.get("productId") or "").strip()
     shipping_address = (data.get("shippingAddress") or "").strip()
-    payment_method = data.get("paymentMethod", "card")
+    phone = (data.get("phone") or "").strip() or None
+    quantity = int(data.get("quantity") or 1)
 
+    product = db.session.get(Product, product_id) if product_id else None
+    if product is None or not product.is_active:
+        return jsonify({"error": "Produit introuvable"}), 404
+    if product.shop_id is None:
+        return jsonify({"error": "Ce produit n'est rattaché à aucune boutique"}), 400
+    if quantity < 1:
+        return jsonify({"error": "Quantité invalide"}), 400
     if not shipping_address:
-        return jsonify({"error": "shippingAddress requis"}), 400
-    if payment_method not in VALID_PAYMENT_METHODS:
-        return jsonify({"error": "paymentMethod invalide"}), 400
+        return jsonify({"error": "Adresse de livraison requise"}), 400
+    if product.stock < quantity:
+        return jsonify({"error": "Stock insuffisant"}), 400
 
-    cart_items = CartItem.query.filter_by(user_id=user_id).all()
-    if not cart_items:
-        return jsonify({"error": "Le panier est vide"}), 400
+    live_id = data.get("liveId")
+    if live_id is not None and db.session.get(Live, live_id) is None:
+        live_id = None
 
-    subtotal = round(
-        sum(float(item.product.price) * item.quantity for item in cart_items), 2
-    )
-    shipping_cost = 0.0 if subtotal >= FREE_SHIPPING_THRESHOLD else SHIPPING_COST
-    total = round(subtotal + shipping_cost, 2)
-
-    order_number = _generate_order_number()
-    while Order.query.filter_by(order_number=order_number).first() is not None:
-        order_number = _generate_order_number()
+    unit_price = float(product.price)
+    subtotal = round(unit_price * quantity, 2)
 
     order = Order(
-        order_number=order_number,
+        order_number=_unique_order_number(),
         user_id=user_id,
+        shop_id=product.shop_id,
+        live_id=live_id,
         subtotal=subtotal,
-        shipping_cost=shipping_cost,
-        total=total,
+        shipping_cost=0,
+        total=subtotal,
         shipping_address=shipping_address,
-        payment_method=payment_method,
-        status="processing",
+        customer_phone=phone,
+        payment_method="whatsapp",
+        status="pending",
     )
     db.session.add(order)
     db.session.flush()
 
-    for item in cart_items:
-        db.session.add(
-            OrderItem(
-                order_id=order.id,
-                product_id=item.product_id,
-                product_name=item.product.name,
-                unit_price=item.product.price,
-                quantity=item.quantity,
-                selected_color=item.selected_color,
-                selected_size=item.selected_size,
-            )
-        )
-        db.session.delete(item)
+    item = OrderItem(
+        order_id=order.id,
+        product_id=product.id,
+        product_name=product.name,
+        unit_price=product.price,
+        quantity=quantity,
+        selected_color=data.get("selectedColor"),
+        selected_size=data.get("selectedSize"),
+    )
+    db.session.add(item)
+    product.stock -= quantity  # réservation du stock
 
     db.session.commit()
-    return jsonify(order.to_dict()), 201
+
+    payload = order.to_dict()
+    payload["whatsappUrl"] = _whatsapp_url(product.shop, order, item)
+    return jsonify(payload), 201
+
+
+@orders_bp.put("/<int:order_id>/status")
+@jwt_required()
+def update_status(order_id):
+    user = current_user()
+    order = db.session.get(Order, order_id)
+    if order is None:
+        return jsonify({"error": "Commande introuvable"}), 404
+
+    new_status = (request.get_json(silent=True) or {}).get("status")
+    if new_status not in ORDER_STATUSES:
+        return jsonify({"error": "Statut invalide"}), 400
+
+    is_shop_owner = user.shop is not None and order.shop_id == user.shop.id
+    is_buyer = order.user_id == user.id
+
+    if is_shop_owner:
+        order.status = new_status
+    elif is_buyer and new_status == "cancelled" and order.status == "pending":
+        order.status = "cancelled"
+    else:
+        return jsonify({"error": "Action non autorisée"}), 403
+
+    db.session.commit()
+    return jsonify(order.to_dict())
