@@ -236,6 +236,7 @@ CREATE TABLE lives (
   title               VARCHAR(150) NOT NULL,
   description         TEXT         NULL,
   category            VARCHAR(100) NULL,
+  cover_url    VARCHAR(500) NULL,
   scheduled_at        DATETIME     NULL,
   status              ENUM('scheduled','live','ended')
                       NOT NULL DEFAULT 'scheduled',

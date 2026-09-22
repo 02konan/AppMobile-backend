@@ -108,6 +108,7 @@ def create_live(user):
         title=title,
         description=(data.get("description") or "").strip() or None,
         category=(data.get("category") or "").strip() or None,
+        cover_url=(data.get("coverUrl") or "").strip() or None,
         scheduled_at=_parse_dt(data.get("scheduledAt")),
         status="scheduled",
     )
@@ -117,6 +118,31 @@ def create_live(user):
     _set_live_products(live, data.get("productIds") or [], user.shop.id)
     db.session.commit()
     return jsonify(live.to_dict(with_products=True)), 201
+
+
+@lives_bp.put("/<int:live_id>")
+@require_roles("merchant")
+def update_live(user, live_id):
+    """Met à jour les infos d'un live (titre, description, catégorie, cover)."""
+    live, error = _owned_live_or_error(user, live_id)
+    if error:
+        return error
+
+    data = request.get_json(silent=True) or {}
+    if "title" in data:
+        title = (data.get("title") or "").strip()
+        if not title:
+            return jsonify({"error": "Le titre est obligatoire"}), 400
+        live.title = title
+    if "description" in data:
+        live.description = (data.get("description") or "").strip() or None
+    if "category" in data:
+        live.category = (data.get("category") or "").strip() or None
+    if "coverUrl" in data:
+        live.cover_url = (data.get("coverUrl") or "").strip() or None
+
+    db.session.commit()
+    return jsonify(live.to_dict(with_products=True))
 
 
 @lives_bp.post("/<int:live_id>/products")
