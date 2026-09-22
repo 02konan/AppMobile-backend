@@ -357,6 +357,7 @@ class Live(db.Model):
     title = db.Column(db.String(150), nullable=False)
     description = db.Column(db.Text, nullable=True)
     category = db.Column(db.String(100), nullable=True)
+    cover_url = db.Column(db.String(500), nullable=True)
     scheduled_at = db.Column(db.DateTime, nullable=True)
     status = db.Column(
         db.Enum("scheduled", "live", "ended", name="live_status"),
@@ -396,6 +397,7 @@ class Live(db.Model):
             "title": self.title,
             "description": self.description,
             "category": self.category,
+            "coverUrl": self.cover_url,
             "scheduledAt": self.scheduled_at.isoformat()
             if self.scheduled_at
             else None,
