@@ -23,6 +23,15 @@ ORDER_STATUSES = (
     "cancelled",
 )
 
+# Statuts que le COMMERÇANT peut poser (partie « avant livraison »).
+MERCHANT_SETTABLE = ("confirmed", "preparing", "ready", "refused")
+
+# Statuts « livraison » gérés UNIQUEMENT par le livreur (via /deliveries).
+DRIVER_ONLY = ("picked_up", "delivering", "delivered")
+
+# Statuts terminaux : la commande n'évolue plus côté commerçant.
+TERMINAL_STATUSES = ("delivered", "refused", "cancelled")
+
 
 def _generate_order_number():
     return "DLV-" + "".join(random.choices(string.digits, k=6))
@@ -160,6 +169,26 @@ def update_status(order_id):
     is_buyer = order.user_id == user.id
 
     if is_shop_owner:
+        # Le commerçant gère uniquement la partie « avant livraison ».
+        if new_status in DRIVER_ONLY:
+            return (
+                jsonify({"error": "Ce statut est géré par le livreur"}),
+                403,
+            )
+        if new_status not in MERCHANT_SETTABLE:
+            return (
+                jsonify({"error": "Statut non autorisé pour le commerçant"}),
+                400,
+            )
+        # Une fois la commande prise en charge par la livraison (ou terminée),
+        # le commerçant ne peut plus la modifier.
+        if order.status in DRIVER_ONLY or order.status in TERMINAL_STATUSES:
+            return (
+                jsonify(
+                    {"error": "La commande est prise en charge par la livraison"}
+                ),
+                409,
+            )
         order.status = new_status
     elif is_buyer and new_status == "cancelled" and order.status == "pending":
         order.status = "cancelled"
