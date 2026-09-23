@@ -299,6 +299,7 @@ class Shop(db.Model):
     )
     name = db.Column(db.String(150), nullable=False)
     logo_url = db.Column(db.String(500), nullable=True)
+    cover_url = db.Column(db.String(500), nullable=True)
     description = db.Column(db.Text, nullable=True)
     phone = db.Column(db.String(30), nullable=True)
     whatsapp = db.Column(db.String(30), nullable=True)
@@ -322,6 +323,7 @@ class Shop(db.Model):
             "userId": self.user_id,
             "name": self.name,
             "logoUrl": self.logo_url,
+            "coverUrl": self.cover_url,
             "description": self.description,
             "phone": self.phone,
             "whatsapp": self.whatsapp,

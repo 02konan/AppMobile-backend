@@ -102,6 +102,7 @@ CREATE TABLE shops (
   user_id      INT UNSIGNED NOT NULL,
   name         VARCHAR(150) NOT NULL,
   logo_url     VARCHAR(500) NULL,
+  cover_url    VARCHAR(500) NULL,
   description  TEXT         NULL,
   phone        VARCHAR(30)  NULL,
   whatsapp     VARCHAR(30)  NULL,

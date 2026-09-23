@@ -61,6 +61,7 @@ def update_my_shop(user):
     for field, attr in (
         ("name", "name"),
         ("logoUrl", "logo_url"),
+        ("coverUrl", "cover_url"),
         ("description", "description"),
         ("phone", "phone"),
         ("whatsapp", "whatsapp"),
