@@ -417,6 +417,30 @@ class Live(db.Model):
         return data
 
 
+class LiveViewer(db.Model):
+    """Présence d'un spectateur sur un live (système de « heartbeat »).
+
+    Chaque spectateur (connecté ou anonyme, identifié par une clé stable)
+    signale régulièrement sa présence. Le nombre de vues d'un live = nombre
+    de spectateurs vus dans une fenêtre récente (voir ACTIVE_WINDOW_SECONDS).
+    Les lignes périmées sont purgées à chaque battement.
+    """
+
+    __tablename__ = "live_viewers"
+
+    # Un spectateur est « actif » s'il a été vu dans les 25 dernières secondes.
+    ACTIVE_WINDOW_SECONDS = 25
+
+    id = db.Column(db.Integer, primary_key=True)
+    live_id = db.Column(db.Integer, db.ForeignKey("lives.id"), nullable=False)
+    viewer_key = db.Column(db.String(80), nullable=False)
+    last_seen = db.Column(db.DateTime, default=_utcnow, nullable=False)
+
+    __table_args__ = (
+        db.UniqueConstraint("live_id", "viewer_key", name="uq_live_viewer"),
+    )
+
+
 class LiveMessage(db.Model):
     __tablename__ = "live_messages"
 

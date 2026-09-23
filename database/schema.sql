@@ -298,6 +298,20 @@ CREATE TABLE live_messages (
     ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB;
 
+-- Présence des spectateurs (compteur de vues par heartbeat)
+CREATE TABLE live_viewers (
+  id          INT UNSIGNED AUTO_INCREMENT,
+  live_id     INT UNSIGNED NOT NULL,
+  viewer_key  VARCHAR(80)  NOT NULL,
+  last_seen   DATETIME     NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_live_viewer (live_id, viewer_key),
+  KEY idx_live_viewers_last_seen (live_id, last_seen),
+  CONSTRAINT fk_live_viewers_live
+    FOREIGN KEY (live_id) REFERENCES lives (id)
+    ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB;
+
 -- ============================================================
 -- DIVIX LIVE — livraisons & signalements
 -- ============================================================

@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint, current_app, jsonify, request
 from flask_jwt_extended import jwt_required
@@ -6,7 +6,7 @@ from flask_jwt_extended import jwt_required
 from .. import agora
 from ..auth_utils import current_user, require_roles
 from ..extensions import db
-from ..models import Live, LiveMessage, Product, live_products
+from ..models import Live, LiveMessage, LiveViewer, Product, live_products
 
 lives_bp = Blueprint("lives", __name__, url_prefix="/api/lives")
 
@@ -280,6 +280,75 @@ def live_token(live_id):
     )
 
 
+def _viewer_key():
+    """Clé identifiant le spectateur : l'utilisateur connecté sinon la clé
+    d'appareil envoyée par l'app (viewerKey)."""
+    user = current_user()
+    if user is not None:
+        return f"u{user.id}"
+    data = request.get_json(silent=True) or {}
+    key = (data.get("viewerKey") or "").strip()
+    return f"d{key[:70]}" if key else None
+
+
+def _recount_viewers(live):
+    """Purge les spectateurs périmés puis met à jour et renvoie le compteur."""
+    cutoff = datetime.now(timezone.utc) - timedelta(
+        seconds=LiveViewer.ACTIVE_WINDOW_SECONDS
+    )
+    LiveViewer.query.filter(
+        LiveViewer.live_id == live.id, LiveViewer.last_seen < cutoff
+    ).delete(synchronize_session=False)
+    count = LiveViewer.query.filter(LiveViewer.live_id == live.id).count()
+    live.viewer_count = count
+    return count
+
+
+@lives_bp.post("/<int:live_id>/heartbeat")
+@jwt_required(optional=True)
+def viewer_heartbeat(live_id):
+    """Signale la présence d'un spectateur et renvoie le nombre de vues.
+
+    À appeler périodiquement (toutes les ~10 s) par l'app côté acheteur.
+    """
+    live = db.session.get(Live, live_id)
+    if live is None:
+        return jsonify({"error": "Live introuvable"}), 404
+
+    key = _viewer_key()
+    if key is None:
+        return jsonify({"error": "viewerKey requis"}), 400
+
+    now = datetime.now(timezone.utc)
+    viewer = LiveViewer.query.filter_by(live_id=live_id, viewer_key=key).first()
+    if viewer is None:
+        db.session.add(LiveViewer(live_id=live_id, viewer_key=key, last_seen=now))
+    else:
+        viewer.last_seen = now
+
+    count = _recount_viewers(live)
+    db.session.commit()
+    return jsonify({"viewerCount": count})
+
+
+@lives_bp.post("/<int:live_id>/leave")
+@jwt_required(optional=True)
+def viewer_leave(live_id):
+    """Retire un spectateur (quand il quitte le live) et renvoie le compteur."""
+    live = db.session.get(Live, live_id)
+    if live is None:
+        return jsonify({"error": "Live introuvable"}), 404
+
+    key = _viewer_key()
+    if key is not None:
+        LiveViewer.query.filter_by(live_id=live_id, viewer_key=key).delete(
+            synchronize_session=False
+        )
+    count = _recount_viewers(live)
+    db.session.commit()
+    return jsonify({"viewerCount": count})
+
+
 @lives_bp.post("/<int:live_id>/start")
 @require_roles("merchant")
 def start_live(user, live_id):
@@ -291,6 +360,9 @@ def start_live(user, live_id):
 
     live.status = "live"
     live.started_at = datetime.now(timezone.utc)
+    # Nouveau live : on repart d'un compteur de vues à zéro.
+    LiveViewer.query.filter_by(live_id=live.id).delete(synchronize_session=False)
+    live.viewer_count = 0
     db.session.commit()
     return jsonify(live.to_dict())
 
@@ -305,5 +377,8 @@ def end_live(user, live_id):
     live.status = "ended"
     live.ended_at = datetime.now(timezone.utc)
     live.current_product_id = None
+    # Live terminé : on vide les spectateurs présents.
+    LiveViewer.query.filter_by(live_id=live.id).delete(synchronize_session=False)
+    live.viewer_count = 0
     db.session.commit()
     return jsonify(live.to_dict())
