@@ -82,16 +82,31 @@ CREATE TABLE product_sizes (
 CREATE TABLE users (
   id             INT UNSIGNED AUTO_INCREMENT,
   name           VARCHAR(150) NOT NULL,
+  username       VARCHAR(50)  NULL,
   role           ENUM('buyer','merchant','admin','driver') NOT NULL DEFAULT 'buyer',
   email          VARCHAR(150) NULL,
   password_hash  VARCHAR(255) NOT NULL,
   phone          VARCHAR(30)  NULL,
+  phone_verified TINYINT(1)   NOT NULL DEFAULT 0,
+  country        VARCHAR(50)  NULL,
+  city           VARCHAR(100) NULL,
   address        VARCHAR(255) NULL,
   avatar_url     VARCHAR(500) NULL,
   created_at     TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   UNIQUE KEY uq_users_email (email),
-  UNIQUE KEY uq_users_phone (phone)
+  UNIQUE KEY uq_users_phone (phone),
+  UNIQUE KEY uq_users_username (username)
+) ENGINE=InnoDB;
+
+-- Codes de vérification SMS (OTP) — DIVIX LIVE
+CREATE TABLE phone_otps (
+  phone       VARCHAR(30) NOT NULL,
+  code        VARCHAR(6)  NOT NULL,
+  expires_at  DATETIME    NOT NULL,
+  attempts    INT         NOT NULL DEFAULT 0,
+  created_at  TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (phone)
 ) ENGINE=InnoDB;
 
 -- ------------------------------------------------------------

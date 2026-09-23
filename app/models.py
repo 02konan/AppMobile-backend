@@ -100,6 +100,7 @@ class User(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(150), nullable=False)
+    username = db.Column(db.String(50), nullable=True, unique=True)
     role = db.Column(
         db.Enum("buyer", "merchant", "admin", "driver", name="user_role"),
         nullable=False,
@@ -108,6 +109,9 @@ class User(db.Model):
     email = db.Column(db.String(150), nullable=True, unique=True)
     password_hash = db.Column(db.String(255), nullable=False)
     phone = db.Column(db.String(30), nullable=True, unique=True)
+    phone_verified = db.Column(db.Boolean, nullable=False, default=False)
+    country = db.Column(db.String(50), nullable=True)
+    city = db.Column(db.String(100), nullable=True)
     address = db.Column(db.String(255), nullable=True)
     avatar_url = db.Column(db.String(500), nullable=True)
     created_at = db.Column(db.DateTime, default=_utcnow)
@@ -124,13 +128,34 @@ class User(db.Model):
         return {
             "id": self.id,
             "name": self.name,
+            "username": self.username,
             "role": self.role,
             "email": self.email,
             "phone": self.phone,
+            "phoneVerified": bool(self.phone_verified),
+            "country": self.country,
+            "city": self.city,
             "address": self.address,
             "avatarUrl": self.avatar_url,
             "shopId": self.shop.id if self.shop else None,
         }
+
+
+class PhoneOtp(db.Model):
+    """Code de vérification SMS (OTP) associé à un numéro de téléphone.
+
+    Un seul code actif par numéro (remplacé à chaque demande). En mode
+    simulé (SMS non configuré), le code n'est pas envoyé mais renvoyé à
+    l'app pour permettre les tests.
+    """
+
+    __tablename__ = "phone_otps"
+
+    phone = db.Column(db.String(30), primary_key=True)
+    code = db.Column(db.String(6), nullable=False)
+    expires_at = db.Column(db.DateTime, nullable=False)
+    attempts = db.Column(db.Integer, nullable=False, default=0)
+    created_at = db.Column(db.DateTime, default=_utcnow)
 
 
 class Favorite(db.Model):
