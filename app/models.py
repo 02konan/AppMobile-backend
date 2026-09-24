@@ -607,6 +607,7 @@ class SellerApplication(db.Model):
         nullable=False,
         default="pending",
     )
+    terms_version = db.Column(db.String(20), nullable=True)
     review_note = db.Column(db.String(500), nullable=True)
     created_at = db.Column(db.DateTime, default=_utcnow)
     reviewed_at = db.Column(db.DateTime, nullable=True)
@@ -628,6 +629,7 @@ class SellerApplication(db.Model):
             "selfieUrl": self.selfie_url,
             "status": self.status,
             "statusLabel": self.STATUS_LABELS.get(self.status, self.status),
+            "termsVersion": self.terms_version,
             "reviewNote": self.review_note,
             "createdAt": self.created_at.isoformat() if self.created_at else None,
         }
