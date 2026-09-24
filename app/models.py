@@ -573,6 +573,66 @@ class Delivery(db.Model):
         return data
 
 
+class SellerApplication(db.Model):
+    """Candidature « Devenir vendeur » (KYC) soumise par un acheteur.
+
+    Regroupe les infos de la future boutique, ses visuels et les pièces
+    d'identité. Validée ou refusée par l'administration : à l'approbation,
+    le compte passe acheteur -> commerçant et la boutique est créée.
+    """
+
+    __tablename__ = "seller_applications"
+
+    STATUS_LABELS = {
+        "pending": "En attente",
+        "approved": "Approuvée",
+        "rejected": "Refusée",
+    }
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    shop_name = db.Column(db.String(150), nullable=False)
+    category = db.Column(db.String(100), nullable=True)
+    city = db.Column(db.String(100), nullable=True)
+    logo_url = db.Column(db.String(500), nullable=True)
+    cover_url = db.Column(db.String(500), nullable=True)
+    id_type = db.Column(
+        db.Enum("cni", "passport", name="id_document_type"), nullable=False
+    )
+    id_front_url = db.Column(db.String(500), nullable=True)
+    id_back_url = db.Column(db.String(500), nullable=True)
+    selfie_url = db.Column(db.String(500), nullable=True)
+    status = db.Column(
+        db.Enum("pending", "approved", "rejected", name="seller_app_status"),
+        nullable=False,
+        default="pending",
+    )
+    review_note = db.Column(db.String(500), nullable=True)
+    created_at = db.Column(db.DateTime, default=_utcnow)
+    reviewed_at = db.Column(db.DateTime, nullable=True)
+
+    user = db.relationship("User", lazy=True)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "userId": self.user_id,
+            "shopName": self.shop_name,
+            "category": self.category,
+            "city": self.city,
+            "logoUrl": self.logo_url,
+            "coverUrl": self.cover_url,
+            "idType": self.id_type,
+            "idFrontUrl": self.id_front_url,
+            "idBackUrl": self.id_back_url,
+            "selfieUrl": self.selfie_url,
+            "status": self.status,
+            "statusLabel": self.STATUS_LABELS.get(self.status, self.status),
+            "reviewNote": self.review_note,
+            "createdAt": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
 class Report(db.Model):
     """Signalement d'un contenu (produit, live, boutique ou utilisateur)
     par un utilisateur, à traiter par l'administration."""

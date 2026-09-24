@@ -13,7 +13,9 @@ from .routes.lives import lives_bp
 from .routes.orders import orders_bp
 from .routes.products import products_bp
 from .routes.reports import reports_bp
+from .routes.seller_applications import seller_apps_bp
 from .routes.shops import shops_bp
+from .routes.uploads import uploads_bp
 
 
 def create_app(config_class=Config):
@@ -35,6 +37,8 @@ def create_app(config_class=Config):
     app.register_blueprint(lives_bp)
     app.register_blueprint(deliveries_bp)
     app.register_blueprint(reports_bp)
+    app.register_blueprint(seller_apps_bp)
+    app.register_blueprint(uploads_bp)
 
     @app.errorhandler(404)
     def not_found(_error):

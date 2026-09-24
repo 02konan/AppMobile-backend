@@ -27,3 +27,7 @@ class Config:
     AGORA_TOKEN_TTL = int(os.environ.get("AGORA_TOKEN_TTL", "3600"))
 
     JSON_SORT_KEYS = False
+
+    # Upload de fichiers (visuels boutique, pièces d'identité KYC).
+    UPLOAD_DIR = os.environ.get("UPLOAD_DIR", "uploads")
+    MAX_CONTENT_LENGTH = 8 * 1024 * 1024  # 8 Mo par requête
