@@ -66,6 +66,7 @@ def submit_application():
     app_.id_front_url = (data.get("idFrontUrl") or "").strip() or None
     app_.id_back_url = (data.get("idBackUrl") or "").strip() or None
     app_.selfie_url = (data.get("selfieUrl") or "").strip() or None
+    app_.terms_version = (data.get("termsVersion") or "").strip() or None
     app_.status = "pending"
     app_.review_note = None
     if pending is None:

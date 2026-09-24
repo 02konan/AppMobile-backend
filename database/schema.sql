@@ -390,6 +390,7 @@ CREATE TABLE seller_applications (
   id_back_url  VARCHAR(500) NULL,
   selfie_url   VARCHAR(500) NULL,
   status       ENUM('pending','approved','rejected') NOT NULL DEFAULT 'pending',
+  terms_version VARCHAR(20) NULL,
   review_note  VARCHAR(500) NULL,
   created_at   TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
   reviewed_at  DATETIME     NULL,
