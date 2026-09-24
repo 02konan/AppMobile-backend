@@ -7,6 +7,7 @@ from .routes.auth import auth_bp
 from .routes.cart import cart_bp
 from .routes.categories import categories_bp
 from .routes.deliveries import deliveries_bp
+from .routes.driver_applications import driver_apps_bp
 from .routes.favorites import favorites_bp
 from .routes.health import health_bp
 from .routes.lives import lives_bp
@@ -38,6 +39,7 @@ def create_app(config_class=Config):
     app.register_blueprint(deliveries_bp)
     app.register_blueprint(reports_bp)
     app.register_blueprint(seller_apps_bp)
+    app.register_blueprint(driver_apps_bp)
     app.register_blueprint(uploads_bp)
 
     @app.errorhandler(404)
