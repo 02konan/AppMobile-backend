@@ -2,7 +2,7 @@ from flask import Flask, jsonify
 from flask_cors import CORS
 
 from .config import Config
-from .extensions import db, jwt
+from .extensions import db, init_redis, jwt
 from .routes.auth import auth_bp
 from .routes.cart import cart_bp
 from .routes.categories import categories_bp
@@ -25,6 +25,7 @@ def create_app(config_class=Config):
 
     db.init_app(app)
     jwt.init_app(app)
+    init_redis(app)
     CORS(app)
 
     app.register_blueprint(health_bp)

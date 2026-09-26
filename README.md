@@ -22,6 +22,37 @@ mysql -u root -p < database/seed.sql        # optionnel, données de démo
 mysql -u root -p < database/create_user.sql # utilisateur MySQL dédié
 ```
 
+Redis et RabbitMQ doivent être démarrés pour les fonctionnalités qui utilisent
+le cache et les événements asynchrones. Leurs connexions sont configurées avec
+`REDIS_URL`, `RABBITMQ_URL` et `RABBITMQ_QUEUE` dans `.env`. L'état de ces deux
+dépendances est disponible via `GET /api/health/dependencies`.
+
+Pour démarrer les services localement :
+
+```bash
+docker compose up -d redis rabbitmq
+```
+
+### Déploiement sur Render
+
+Le fichier `render.yaml` configure le Web Service Flask avec Gunicorn. Après
+avoir créé le service, renseigner dans Render les variables `DB_HOST`,
+`DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `JWT_SECRET_KEY` et
+`FIREBASE_SERVICE_ACCOUNT_JSON`.
+
+Pour `FIREBASE_SERVICE_ACCOUNT_JSON`, coller le contenu JSON de la clé privée
+d'un compte de service Firebase Admin. Cette valeur est un secret : la saisir
+dans les variables d'environnement Render ou dans le `.env` local, jamais dans
+Git ni dans l'application Flutter. Dans Firebase Console, activer
+l'authentification par téléphone et configurer les empreintes SHA-1/SHA-256 de
+l'application Android.
+
+Pour Redis, créer un service Render Key Value puis copier son URL interne dans
+`REDIS_URL`. Pour RabbitMQ, utiliser une instance externe compatible AMQP (par
+exemple CloudAMQP) et copier son URL `amqp://...` dans `RABBITMQ_URL`.
+`docker-compose.yml` est destiné au développement local et ne doit pas être
+utilisé comme commande de démarrage Render.
+
 ## Lancer le serveur
 
 ```bash
@@ -47,13 +78,14 @@ Le token est renvoyé par `/api/auth/register` et `/api/auth/login`.
 | Méthode | Route | Description |
 |---|---|---|
 | GET | `/api/health` | Vérifie que l'API répond |
+| GET | `/api/health/dependencies` | Vérifie Redis et RabbitMQ |
 
 ### Authentification
 
 | Méthode | Route | Auth | Corps | Description |
 |---|---|---|---|---|
-| POST | `/api/auth/register` | – | `{name, email, password}` | Crée un compte, renvoie `{token, user}` |
-| POST | `/api/auth/login` | – | `{email, password}` | Connexion, renvoie `{token, user}` |
+| POST | `/api/auth/register` | – | `{name, phone, password, role, firebaseIdToken}` | Vérifie le numéro avec Firebase puis crée le compte |
+| POST | `/api/auth/login` | – | `{phone, password}` | Connexion, renvoie `{token, user}` |
 | GET | `/api/auth/me` | ✓ | – | Profil de l'utilisateur connecté |
 | PUT | `/api/auth/me` | ✓ | `{name?, address?, phone?}` | Met à jour le profil |
 

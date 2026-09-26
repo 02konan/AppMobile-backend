@@ -1,44 +1,37 @@
 import os
-import random
+import json
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
+import firebase_admin
+from firebase_admin import auth as firebase_auth
+from firebase_admin import credentials
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import create_access_token, get_jwt_identity, jwt_required
 
 from ..extensions import db
-from ..models import PhoneOtp, Shop, User
+from ..models import Shop, User
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/api/auth")
 
 VALID_ROLES = ("buyer", "merchant", "driver")
 
-# Envoi réel de SMS ? Tant qu'aucun fournisseur n'est configuré, on reste en
-# mode « simulé » : le code n'est pas envoyé mais renvoyé à l'app (devCode)
-# pour permettre les tests. Passer SMS_ENABLED=true quand un fournisseur
-# (Twilio…) sera branché dans _send_sms().
-SMS_ENABLED = os.environ.get("SMS_ENABLED", "false").lower() == "true"
-OTP_TTL_MINUTES = 10
 USERNAME_RE = re.compile(r"^[a-z0-9_]{3,30}$")
 
 
-def _now():
-    return datetime.now(timezone.utc)
+def _firebase_admin_app():
+    try:
+        return firebase_admin.get_app()
+    except ValueError:
+        service_account_json = os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON")
+        if not service_account_json:
+            raise RuntimeError("Firebase Admin n'est pas configuré")
+        service_account = json.loads(service_account_json)
+        return firebase_admin.initialize_app(credentials.Certificate(service_account))
 
 
 def _normalize_username(value):
     return (value or "").strip().lower()
-
-
-def _send_sms(phone, code):
-    """Point d'intégration d'un vrai fournisseur SMS (à implémenter plus tard).
-
-    Retourne True si le SMS a été envoyé. En mode simulé, ne fait rien.
-    """
-    if not SMS_ENABLED:
-        return False
-    # TODO: brancher Twilio / autre ici quand les identifiants seront fournis.
-    return False
 
 
 # ------------------------------------------------------------
@@ -59,61 +52,6 @@ def check_username():
 
 
 # ------------------------------------------------------------
-# Demande de code SMS (OTP)
-# ------------------------------------------------------------
-@auth_bp.post("/request-otp")
-def request_otp():
-    data = request.get_json(silent=True) or {}
-    phone = (data.get("phone") or "").strip()
-    if not phone:
-        return jsonify({"error": "Numéro de téléphone requis"}), 400
-
-    code = f"{random.randint(0, 999999):06d}"
-    otp = db.session.get(PhoneOtp, phone)
-    if otp is None:
-        otp = PhoneOtp(phone=phone)
-        db.session.add(otp)
-    otp.code = code
-    otp.expires_at = _now() + timedelta(minutes=OTP_TTL_MINUTES)
-    otp.attempts = 0
-    db.session.commit()
-
-    sent = _send_sms(phone, code)
-    payload = {"sent": sent, "expiresIn": OTP_TTL_MINUTES * 60}
-    # Mode simulé : on renvoie le code pour permettre les tests.
-    if not sent:
-        payload["devCode"] = code
-    return jsonify(payload)
-
-
-def _verify_otp(phone, code):
-    """Vérifie un code OTP. Retourne (ok, message)."""
-    otp = db.session.get(PhoneOtp, phone)
-    if otp is None:
-        return False, "Demandez d'abord un code de vérification"
-    if otp.expires_at.replace(tzinfo=timezone.utc) < _now():
-        return False, "Code expiré, demandez-en un nouveau"
-    if otp.attempts >= 5:
-        return False, "Trop de tentatives, demandez un nouveau code"
-    if (code or "").strip() != otp.code:
-        otp.attempts += 1
-        db.session.commit()
-        return False, "Code incorrect"
-    return True, None
-
-
-@auth_bp.post("/verify-otp")
-def verify_otp():
-    data = request.get_json(silent=True) or {}
-    phone = (data.get("phone") or "").strip()
-    code = (data.get("code") or "").strip()
-    ok, message = _verify_otp(phone, code)
-    if not ok:
-        return jsonify({"error": message}), 400
-    return jsonify({"verified": True})
-
-
-# ------------------------------------------------------------
 # Inscription
 # ------------------------------------------------------------
 @auth_bp.post("/register")
@@ -124,6 +62,7 @@ def register():
     password = data.get("password") or ""
     role = (data.get("role") or "buyer").strip()
     email = (data.get("email") or "").strip().lower() or None
+    firebase_id_token = (data.get("firebaseIdToken") or "").strip()
     username = _normalize_username(data.get("username")) or None
     country = (data.get("country") or "").strip() or None
     city = (data.get("city") or "").strip() or None
@@ -145,10 +84,20 @@ def register():
     if username is not None and not USERNAME_RE.match(username):
         return jsonify({"error": "Nom d'utilisateur invalide"}), 400
 
-    # Vérification du code SMS (OTP).
-    ok, message = _verify_otp(phone, otp_code)
-    if not ok:
-        return jsonify({"error": message}), 400
+    if not firebase_id_token:
+        return jsonify({"error": "Vérification du téléphone requise"}), 400
+    try:
+        firebase_user = firebase_auth.verify_id_token(
+            firebase_id_token,
+            app=_firebase_admin_app(),
+        )
+    except RuntimeError:
+        return jsonify({"error": "La vérification Firebase n'est pas configurée"}), 503
+    except Exception:
+        return jsonify({"error": "Jeton Firebase invalide ou expiré"}), 401
+
+    if firebase_user.get("phone_number") != phone:
+        return jsonify({"error": "Le numéro vérifié ne correspond pas"}), 403
 
     if User.query.filter_by(phone=phone).first() is not None:
         return jsonify({"error": "Un compte existe déjà avec ce téléphone"}), 409
@@ -179,11 +128,6 @@ def register():
         shop = Shop(user_id=user.id, name=shop_name, whatsapp=phone, phone=phone)
         db.session.add(shop)
 
-    # Le code OTP a servi : on le supprime.
-    otp = db.session.get(PhoneOtp, phone)
-    if otp is not None:
-        db.session.delete(otp)
-
     db.session.commit()
 
     token = create_access_token(identity=str(user.id))
@@ -202,7 +146,14 @@ def login():
 
     user = None
     if phone:
-        user = User.query.filter_by(phone=phone).first()
+        digits = re.sub(r"\D", "", phone)
+        candidates = [phone, digits]
+        if not phone.startswith("+"):
+            candidates.append(f"+225{digits}")
+        for candidate in dict.fromkeys(candidates):
+            user = User.query.filter_by(phone=candidate).first()
+            if user is not None:
+                break
     if user is None and email:
         user = User.query.filter_by(email=email).first()
 

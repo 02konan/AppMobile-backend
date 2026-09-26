@@ -20,6 +20,10 @@ class Config:
     JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "change-me-in-production")
     JWT_ACCESS_TOKEN_EXPIRES = timedelta(days=7)
 
+    REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+    RABBITMQ_URL = os.environ.get("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/%2F")
+    RABBITMQ_QUEUE = os.environ.get("RABBITMQ_QUEUE", "divix.events")
+
     # Streaming vidéo (Agora) — laissés vides tant que le compte n'est pas créé.
     AGORA_APP_ID = os.environ.get("AGORA_APP_ID", "")
     AGORA_APP_CERTIFICATE = os.environ.get("AGORA_APP_CERTIFICATE", "")
