@@ -293,18 +293,19 @@ def add_to_cart():
         return error
 
     # --------------------------------------------------------
-    # Product ID
+    # Product ID (identifiant texte, ex. "p1")
     # --------------------------------------------------------
 
-    product_id, error_message = _validate_positive_integer(
-        data.get("productId"),
-        "productId",
-        minimum=1,
+    product_id_raw = data.get("productId")
+    product_id = (
+        str(product_id_raw).strip()
+        if product_id_raw is not None
+        else ""
     )
 
-    if error_message:
+    if not product_id or len(product_id) > 30:
         return jsonify({
-            "error": error_message
+            "error": "productId invalide"
         }), 400
 
     # --------------------------------------------------------
