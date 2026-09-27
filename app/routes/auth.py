@@ -13,6 +13,7 @@ from flask_jwt_extended import (
 )
 from marshmallow import ValidationError
 
+from .. import fb_auth
 from ..extensions import db
 from ..models import Shop, User
 from ..schemas import (
@@ -131,6 +132,7 @@ def _get_json_body(schema):
 
     data = request.get_json(silent=True)
 
+<<<<<<< Updated upstream
     if not isinstance(data, dict):
         return None, (
             jsonify({
@@ -139,6 +141,87 @@ def _get_json_body(schema):
                     "un objet"
                 )
             }),
+=======
+# ------------------------------------------------------------
+# Demande de code SMS (OTP)
+# ------------------------------------------------------------
+@auth_bp.post("/request-otp")
+def request_otp():
+    data = request.get_json(silent=True) or {}
+    phone = (data.get("phone") or "").strip()
+    if not phone:
+        return jsonify({"error": "Numéro de téléphone requis"}), 400
+
+    code = f"{random.randint(0, 999999):06d}"
+    otp = db.session.get(PhoneOtp, phone)
+    if otp is None:
+        otp = PhoneOtp(phone=phone)
+        db.session.add(otp)
+    otp.code = code
+    otp.expires_at = _now() + timedelta(minutes=OTP_TTL_MINUTES)
+    otp.attempts = 0
+    db.session.commit()
+
+    sent = _send_sms(phone, code)
+    payload = {"sent": sent, "expiresIn": OTP_TTL_MINUTES * 60}
+    # Mode simulé : on renvoie le code pour permettre les tests.
+    if not sent:
+        payload["devCode"] = code
+    return jsonify(payload)
+
+
+def _verify_otp(phone, code):
+    """Vérifie un code OTP. Retourne (ok, message)."""
+    otp = db.session.get(PhoneOtp, phone)
+    if otp is None:
+        return False, "Demandez d'abord un code de vérification"
+    if otp.expires_at.replace(tzinfo=timezone.utc) < _now():
+        return False, "Code expiré, demandez-en un nouveau"
+    if otp.attempts >= 5:
+        return False, "Trop de tentatives, demandez un nouveau code"
+    if (code or "").strip() != otp.code:
+        otp.attempts += 1
+        db.session.commit()
+        return False, "Code incorrect"
+    return True, None
+
+
+@auth_bp.post("/verify-otp")
+def verify_otp():
+    data = request.get_json(silent=True) or {}
+    phone = (data.get("phone") or "").strip()
+    code = (data.get("code") or "").strip()
+    ok, message = _verify_otp(phone, code)
+    if not ok:
+        return jsonify({"error": message}), 400
+    return jsonify({"verified": True})
+
+
+# ------------------------------------------------------------
+# Inscription
+# ------------------------------------------------------------
+@auth_bp.post("/register")
+def register():
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    phone = (data.get("phone") or "").strip()
+    password = data.get("password") or ""
+    role = (data.get("role") or "buyer").strip()
+    email = (data.get("email") or "").strip().lower() or None
+    username = _normalize_username(data.get("username")) or None
+    country = (data.get("country") or "").strip() or None
+    city = (data.get("city") or "").strip() or None
+    otp_code = (data.get("otpCode") or "").strip()
+    firebase_id_token = (data.get("firebaseIdToken") or "").strip()
+
+    if not name or not phone or len(password) < 8:
+        return (
+            jsonify(
+                {
+                    "error": "Nom, téléphone et mot de passe (min. 8 caractères) requis"
+                }
+            ),
+>>>>>>> Stashed changes
             400,
         )
 
@@ -154,7 +237,39 @@ def _get_json_body(schema):
             400,
         )
 
+<<<<<<< Updated upstream
     return validated_data, None
+=======
+    # Vérification du numéro de téléphone.
+    # Mode fournisseur (Firebase Phone Auth) : l'app envoie un jeton Firebase
+    # que l'on vérifie côté serveur. Repli sur le code OTP interne (mode simulé
+    # / tests) uniquement si aucun jeton n'est fourni.
+    if firebase_id_token:
+        claims = fb_auth.verify_id_token(firebase_id_token)
+        if claims is None:
+            if not fb_auth.is_configured():
+                return (
+                    jsonify(
+                        {
+                            "error": "Vérification du téléphone non configurée sur "
+                            "le serveur (Firebase)."
+                        }
+                    ),
+                    503,
+                )
+            return (
+                jsonify({"error": "Vérification du numéro échouée. Réessayez."}),
+                400,
+            )
+        # Le numéro vérifié par Firebase fait foi.
+        verified_phone = (claims.get("phone_number") or "").strip()
+        if verified_phone:
+            phone = verified_phone
+    else:
+        ok, message = _verify_otp(phone, otp_code)
+        if not ok:
+            return jsonify({"error": message}), 400
+>>>>>>> Stashed changes
 
 
 def _get_current_user():
