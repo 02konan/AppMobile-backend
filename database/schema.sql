@@ -127,6 +127,8 @@ CREATE TABLE shops (
   category     VARCHAR(100) NULL,
   status       ENUM('pending','validated','suspended')
                NOT NULL DEFAULT 'pending',
+  subscription_plan       VARCHAR(30) NULL,
+  subscription_expires_at DATETIME    NULL,
   created_at   TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at   TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
                             ON UPDATE CURRENT_TIMESTAMP,
@@ -135,6 +137,25 @@ CREATE TABLE shops (
   KEY idx_shops_status (status),
   CONSTRAINT fk_shops_user
     FOREIGN KEY (user_id) REFERENCES users (id)
+    ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB;
+
+-- Paiements d'abonnement vendeur (préparé pour mobile money)
+CREATE TABLE subscription_payments (
+  id         INT UNSIGNED AUTO_INCREMENT,
+  shop_id    INT UNSIGNED NOT NULL,
+  plan       VARCHAR(30)  NOT NULL,
+  amount     DECIMAL(10,2) NOT NULL DEFAULT 0,
+  provider   VARCHAR(30)  NULL,
+  reference  VARCHAR(100) NULL,
+  status     ENUM('pending','success','failed','cancelled') NOT NULL DEFAULT 'pending',
+  days       INT          NOT NULL DEFAULT 30,
+  created_at TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  paid_at    DATETIME     NULL,
+  PRIMARY KEY (id),
+  KEY idx_subpay_shop (shop_id, status),
+  CONSTRAINT fk_subpay_shop
+    FOREIGN KEY (shop_id) REFERENCES shops (id)
     ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB;
 
