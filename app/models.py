@@ -337,10 +337,24 @@ class Shop(db.Model):
         nullable=False,
         default="pending",
     )
+    # Abonnement vendeur : la boutique est "abonnée" tant que
+    # subscription_expires_at est dans le futur. (Aucune restriction appliquée
+    # pour l'instant — le champ sert de base au futur blocage.)
+    subscription_plan = db.Column(db.String(30), nullable=True)
+    subscription_expires_at = db.Column(db.DateTime, nullable=True)
     created_at = db.Column(db.DateTime, default=_utcnow)
     updated_at = db.Column(db.DateTime, default=_utcnow, onupdate=_utcnow)
 
     products = db.relationship("Product", backref="shop", lazy=True)
+
+    @property
+    def subscription_active(self):
+        exp = self.subscription_expires_at
+        if exp is None:
+            return False
+        if exp.tzinfo is None:
+            exp = exp.replace(tzinfo=timezone.utc)
+        return exp > _utcnow()
 
     def to_dict(self):
         return {
@@ -357,6 +371,13 @@ class Shop(db.Model):
             "hours": self.hours,
             "category": self.category,
             "status": self.status,
+            "subscription": {
+                "plan": self.subscription_plan,
+                "expiresAt": self.subscription_expires_at.isoformat()
+                if self.subscription_expires_at
+                else None,
+                "active": self.subscription_active,
+            },
         }
 
 
@@ -751,4 +772,58 @@ class Report(db.Model):
             "statusLabel": self.STATUS_LABELS.get(self.status, self.status),
             "createdAt": self.created_at.isoformat() if self.created_at else None,
             "resolvedAt": self.resolved_at.isoformat() if self.resolved_at else None,
+        }
+
+
+class SubscriptionPayment(db.Model):
+    """Paiement d'abonnement vendeur (préparé pour un fournisseur mobile money).
+
+    Le flux : création d'un paiement `pending` -> le fournisseur confirme via
+    webhook -> statut `success` et l'abonnement de la boutique est prolongé.
+    Tant qu'aucun fournisseur n'est branché, un paiement peut être validé
+    manuellement par l'administration.
+    """
+
+    __tablename__ = "subscription_payments"
+
+    STATUS_LABELS = {
+        "pending": "En attente",
+        "success": "Payé",
+        "failed": "Échoué",
+        "cancelled": "Annulé",
+    }
+
+    id = db.Column(db.Integer, primary_key=True)
+    shop_id = db.Column(db.Integer, db.ForeignKey("shops.id"), nullable=False)
+    plan = db.Column(db.String(30), nullable=False)
+    amount = db.Column(db.Numeric(10, 2), nullable=False, default=0)
+    provider = db.Column(db.String(30), nullable=True)  # cinetpay, wave, manual…
+    reference = db.Column(db.String(100), nullable=True)  # id transaction fournisseur
+    status = db.Column(
+        db.Enum(
+            "pending", "success", "failed", "cancelled",
+            name="subscription_payment_status",
+        ),
+        nullable=False,
+        default="pending",
+    )
+    days = db.Column(db.Integer, nullable=False, default=30)
+    created_at = db.Column(db.DateTime, default=_utcnow)
+    paid_at = db.Column(db.DateTime, nullable=True)
+
+    shop = db.relationship("Shop", lazy=True)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "shopId": self.shop_id,
+            "plan": self.plan,
+            "amount": float(self.amount) if self.amount is not None else 0.0,
+            "provider": self.provider,
+            "reference": self.reference,
+            "status": self.status,
+            "statusLabel": self.STATUS_LABELS.get(self.status, self.status),
+            "days": self.days,
+            "createdAt": self.created_at.isoformat() if self.created_at else None,
+            "paidAt": self.paid_at.isoformat() if self.paid_at else None,
         }
