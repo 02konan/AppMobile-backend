@@ -511,6 +511,74 @@ class LiveMessage(db.Model):
 
 
 # ============================================================
+# DIVIX — ReelShops (vidéos courtes shoppables, façon TikTok)
+# ============================================================
+
+# Produits associés à un reel (comme pour un live).
+reel_products = db.Table(
+    "reel_products",
+    db.Column(
+        "reel_id", db.Integer, db.ForeignKey("reels.id"), primary_key=True
+    ),
+    db.Column(
+        "product_id",
+        db.String(30),
+        db.ForeignKey("products.id"),
+        primary_key=True,
+    ),
+    db.Column("position", db.Integer, nullable=False, default=0),
+)
+
+
+class Reel(db.Model):
+    """Vidéo courte (≤ 30 s) publiée par une boutique, avec des produits
+    présentés en dessous (bouton « Acheter »). Vidéo hébergée sur Cloudinary.
+    """
+
+    __tablename__ = "reels"
+
+    # Durée maximale autorisée pour une vidéo de reel (secondes).
+    MAX_DURATION_SECONDS = 30
+
+    id = db.Column(db.Integer, primary_key=True)
+    shop_id = db.Column(db.Integer, db.ForeignKey("shops.id"), nullable=False)
+    caption = db.Column(db.String(300), nullable=True)
+    video_url = db.Column(db.String(500), nullable=False)
+    thumbnail_url = db.Column(db.String(500), nullable=True)
+    duration_seconds = db.Column(db.Integer, nullable=True)
+    view_count = db.Column(db.Integer, nullable=False, default=0)
+    is_active = db.Column(db.Boolean, nullable=False, default=True)
+    created_at = db.Column(db.DateTime, default=_utcnow)
+    updated_at = db.Column(db.DateTime, default=_utcnow, onupdate=_utcnow)
+
+    shop = db.relationship("Shop", lazy=True)
+    products = db.relationship(
+        "Product",
+        secondary=reel_products,
+        order_by=reel_products.c.position,
+        lazy=True,
+    )
+
+    def to_dict(self, with_products=True):
+        data = {
+            "id": self.id,
+            "shopId": self.shop_id,
+            "shopName": self.shop.name if self.shop else None,
+            "shopLogoUrl": self.shop.logo_url if self.shop else None,
+            "caption": self.caption,
+            "videoUrl": self.video_url,
+            "thumbnailUrl": self.thumbnail_url,
+            "durationSeconds": self.duration_seconds,
+            "viewCount": self.view_count,
+            "productCount": len(self.products),
+            "createdAt": self.created_at.isoformat() if self.created_at else None,
+        }
+        if with_products:
+            data["products"] = [p.to_dict() for p in self.products]
+        return data
+
+
+# ============================================================
 # DIVIX LIVE — livraisons & signalements
 # ============================================================
 
