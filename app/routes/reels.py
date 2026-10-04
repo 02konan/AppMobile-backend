@@ -156,7 +156,7 @@ def create_reel(user):
     # Notifie tout le monde (sauf le commerçant) de la nouvelle vidéo.
     shop_name = user.shop.name if user.shop else "Une boutique"
     notify_all(
-        "🎬 Nouveau ReelShop",
+        "Nouveau ReelShop",
         f"{shop_name} vient de publier une vidéo.",
         data={"type": "reel", "reelId": reel.id},
         exclude_user_id=user.id,

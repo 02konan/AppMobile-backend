@@ -154,7 +154,7 @@ def place_order():
     if shop is not None and shop.user_id is not None:
         notify_users(
             [shop.user_id],
-            "🛒 Nouvelle commande",
+            "Nouvelle commande",
             f"{product.name} · {quantity} article(s) à préparer.",
             data={"type": "order", "orderId": order.id},
         )
@@ -212,7 +212,7 @@ def update_status(order_id):
     label = Order.STATUS_LABELS.get(order.status, order.status)
     notify_users(
         [order.user_id],
-        "📦 Commande mise à jour",
+        "Commande mise à jour",
         f"Votre commande {order.order_number} est : {label}.",
         data={"type": "order", "orderId": order.id},
         exclude_user_id=user.id,
