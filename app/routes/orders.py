@@ -61,6 +61,24 @@ def _whatsapp_url(shop, order, item):
     return f"https://wa.me/{number}?text={quote(message)}"
 
 
+def _whatsapp_url_order(shop, order):
+    """Lien wa.me listant tous les articles d'une commande (achat panier)."""
+    if shop is None:
+        return None
+    raw = shop.whatsapp or shop.phone or ""
+    number = "".join(ch for ch in raw if ch.isdigit())
+    if not number:
+        return None
+    lines = ", ".join(
+        f"{it.product_name} (x{it.quantity})" for it in order.items
+    )
+    message = (
+        f"Bonjour, je souhaite commander : {lines} — "
+        f"commande {order.order_number} sur DIVIX."
+    )
+    return f"https://wa.me/{number}?text={quote(message)}"
+
+
 @orders_bp.get("")
 @jwt_required()
 def list_orders():
@@ -162,6 +180,106 @@ def place_order():
     payload = order.to_dict()
     payload["whatsappUrl"] = _whatsapp_url(product.shop, order, item)
     return jsonify(payload), 201
+
+
+@orders_bp.post("/cart")
+@jwt_required()
+def place_cart_order():
+    """Commande groupée depuis le panier : UNE commande par boutique.
+
+    Corps : {items: [{productId, quantity, selectedColor, selectedSize}],
+    shippingAddress, phone}. Renvoie la liste des commandes créées, chacune
+    avec son lien WhatsApp de finalisation.
+    """
+    user_id = int(get_jwt_identity())
+    data = request.get_json(silent=True) or {}
+    shipping_address = (data.get("shippingAddress") or "").strip()
+    phone = (data.get("phone") or "").strip() or None
+    items = data.get("items")
+
+    if not shipping_address:
+        return jsonify({"error": "Adresse de livraison requise"}), 400
+    if not isinstance(items, list) or not items:
+        return jsonify({"error": "Panier vide"}), 400
+
+    # Groupe les articles par boutique (après validation produit / stock).
+    groups = {}
+    for raw_item in items:
+        pid = str(raw_item.get("productId") or "").strip()
+        qty = int(raw_item.get("quantity") or 1)
+        product = db.session.get(Product, pid) if pid else None
+        if product is None or not product.is_active:
+            return jsonify({"error": "Produit introuvable"}), 404
+        if product.shop_id is None:
+            return (
+                jsonify({"error": "Un produit n'est rattaché à aucune boutique"}),
+                400,
+            )
+        if qty < 1:
+            return jsonify({"error": "Quantité invalide"}), 400
+        if product.stock < qty:
+            return (
+                jsonify({"error": f"Stock insuffisant pour {product.name}"}),
+                400,
+            )
+        groups.setdefault(product.shop_id, []).append(
+            (
+                product,
+                qty,
+                raw_item.get("selectedColor"),
+                raw_item.get("selectedSize"),
+            )
+        )
+
+    created = []
+    for shop_id, entries in groups.items():
+        subtotal = sum(e[0].price * e[1] for e in entries)
+        order = Order(
+            order_number=_unique_order_number(),
+            user_id=user_id,
+            shop_id=shop_id,
+            subtotal=subtotal,
+            shipping_cost=0,
+            total=subtotal,
+            shipping_address=shipping_address,
+            customer_phone=phone,
+            payment_method="whatsapp",
+            status="pending",
+        )
+        db.session.add(order)
+        db.session.flush()
+        for product, qty, color, size in entries:
+            db.session.add(
+                OrderItem(
+                    order_id=order.id,
+                    product_id=product.id,
+                    product_name=product.name,
+                    unit_price=product.price,
+                    quantity=qty,
+                    selected_color=color,
+                    selected_size=size,
+                )
+            )
+            product.stock -= qty
+        created.append(order)
+
+    db.session.commit()
+
+    payloads = []
+    for order in created:
+        shop = order.shop
+        if shop is not None and shop.user_id is not None:
+            notify_users(
+                [shop.user_id],
+                "Nouvelle commande",
+                f"{len(order.items)} article(s) à préparer.",
+                data={"type": "order", "orderId": order.id},
+            )
+        payload = order.to_dict()
+        payload["whatsappUrl"] = _whatsapp_url_order(shop, order)
+        payloads.append(payload)
+
+    return jsonify(payloads), 201
 
 
 @orders_bp.put("/<int:order_id>/status")
