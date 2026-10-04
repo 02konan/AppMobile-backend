@@ -13,6 +13,7 @@ from .routes.health import health_bp
 from .routes.lives import lives_bp
 from .routes.orders import orders_bp
 from .routes.products import products_bp
+from .routes.reels import reels_bp
 from .routes.reports import reports_bp
 from .routes.seller_applications import seller_apps_bp
 from .routes.shops import shops_bp
@@ -38,6 +39,7 @@ def create_app(config_class=Config):
     app.register_blueprint(orders_bp)
     app.register_blueprint(shops_bp)
     app.register_blueprint(lives_bp)
+    app.register_blueprint(reels_bp)
     app.register_blueprint(deliveries_bp)
     app.register_blueprint(reports_bp)
     app.register_blueprint(seller_apps_bp)
