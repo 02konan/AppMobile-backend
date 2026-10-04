@@ -64,14 +64,13 @@ class RegisterSchema(Schema):
         ),
     )
 
+    # L'inscription crée toujours un acheteur. On devient vendeur ou livreur
+    # uniquement via les parcours dédiés (« Devenir vendeur / livreur »),
+    # validés par l'admin. Toute autre valeur est refusée.
     role = fields.Str(
         load_default="buyer",
         validate=validate.OneOf(
-            [
-                "buyer",
-                "merchant",
-                "driver",
-            ],
+            ["buyer"],
             error="Type de compte invalide",
         ),
     )
