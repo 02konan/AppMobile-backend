@@ -369,7 +369,7 @@ def start_live(user, live_id):
     # Notifie tout le monde (sauf le commerçant) qu'un live démarre.
     shop_name = user.shop.name if user.shop else "Une boutique"
     notify_all(
-        "🔴 Live en cours",
+        "Live en cours",
         f"{shop_name} est en direct maintenant !",
         data={"type": "live", "liveId": live.id},
         exclude_user_id=user.id,
