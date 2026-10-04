@@ -895,3 +895,32 @@ class SubscriptionPayment(db.Model):
             "createdAt": self.created_at.isoformat() if self.created_at else None,
             "paidAt": self.paid_at.isoformat() if self.paid_at else None,
         }
+
+
+# ============================================================
+# DIVIX — Notifications push (jetons d'appareils FCM)
+# ============================================================
+
+
+class DeviceToken(db.Model):
+    """Jeton FCM d'un appareil, rattaché à un utilisateur, pour les
+    notifications push. Un même jeton peut changer d'utilisateur
+    (réinstallation, reconnexion) : il est alors réaffecté."""
+
+    __tablename__ = "device_tokens"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(
+        db.Integer, db.ForeignKey("users.id"), nullable=False
+    )
+    token = db.Column(db.String(255), nullable=False, unique=True)
+    platform = db.Column(db.String(20), nullable=True)  # android / ios / web
+    created_at = db.Column(db.DateTime, default=_utcnow)
+    updated_at = db.Column(db.DateTime, default=_utcnow, onupdate=_utcnow)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "userId": self.user_id,
+            "platform": self.platform,
+        }
