@@ -14,7 +14,7 @@ from flask_jwt_extended import (
 from marshmallow import ValidationError
 
 from ..extensions import db
-from ..models import Shop, User
+from ..models import User
 from ..schemas import (
     LoginSchema,
     RegisterSchema,
@@ -251,10 +251,9 @@ def register():
 
     password = data["password"]
 
-    role = data.get(
-        "role",
-        "buyer",
-    )
+    # L'inscription crée toujours un acheteur. Devenir vendeur ou livreur
+    # passe par les parcours KYC dédiés, validés par l'admin (une seule porte).
+    role = "buyer"
 
     email = data.get("email")
 
@@ -414,29 +413,10 @@ def register():
 
         db.session.flush()
 
-        # ----------------------------------------------------
-        # Boutique marchand
-        # ----------------------------------------------------
-
-        if role == "merchant":
-
-            shop_name = (
-                data.get("shopName") or ""
-            ).strip()
-
-            if not shop_name:
-                shop_name = (
-                    f"Boutique de {name}"
-                )
-
-            shop = Shop(
-                user_id=user.id,
-                name=shop_name,
-                whatsapp=phone,
-                phone=phone,
-            )
-
-            db.session.add(shop)
+        # La boutique n'est jamais créée à l'inscription : elle l'est
+        # uniquement à la validation d'une candidature « Devenir vendeur »
+        # (côté admin). Un vendeur = un compte avec une boutique, créé une
+        # seule fois.
 
         db.session.commit()
 
