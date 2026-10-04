@@ -11,6 +11,7 @@ from flask_jwt_extended import jwt_required
 from ..auth_utils import require_roles
 from ..extensions import db
 from ..models import Product, Reel, reel_products
+from ..push import notify_all
 
 reels_bp = Blueprint("reels", __name__, url_prefix="/api/reels")
 
@@ -151,6 +152,15 @@ def create_reel(user):
 
     _set_reel_products(reel, data.get("productIds") or [], user.shop.id)
     db.session.commit()
+
+    # Notifie tout le monde (sauf le commerçant) de la nouvelle vidéo.
+    shop_name = user.shop.name if user.shop else "Une boutique"
+    notify_all(
+        "🎬 Nouveau ReelShop",
+        f"{shop_name} vient de publier une vidéo.",
+        data={"type": "reel", "reelId": reel.id},
+        exclude_user_id=user.id,
+    )
     return jsonify(reel.to_dict()), 201
 
 

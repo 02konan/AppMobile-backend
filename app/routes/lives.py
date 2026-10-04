@@ -7,6 +7,7 @@ from .. import agora
 from ..auth_utils import current_user, require_roles
 from ..extensions import db
 from ..models import Live, LiveMessage, LiveViewer, Product, live_products
+from ..push import notify_all
 
 lives_bp = Blueprint("lives", __name__, url_prefix="/api/lives")
 
@@ -364,6 +365,15 @@ def start_live(user, live_id):
     LiveViewer.query.filter_by(live_id=live.id).delete(synchronize_session=False)
     live.viewer_count = 0
     db.session.commit()
+
+    # Notifie tout le monde (sauf le commerçant) qu'un live démarre.
+    shop_name = user.shop.name if user.shop else "Une boutique"
+    notify_all(
+        "🔴 Live en cours",
+        f"{shop_name} est en direct maintenant !",
+        data={"type": "live", "liveId": live.id},
+        exclude_user_id=user.id,
+    )
     return jsonify(live.to_dict())
 
 

@@ -8,6 +8,7 @@ from flask_jwt_extended import get_jwt_identity, jwt_required
 from ..auth_utils import current_user
 from ..extensions import db
 from ..models import Live, Order, OrderItem, Product
+from ..push import notify_users
 
 orders_bp = Blueprint("orders", __name__, url_prefix="/api/orders")
 
@@ -148,6 +149,16 @@ def place_order():
 
     db.session.commit()
 
+    # Notifie le commerçant propriétaire de la boutique.
+    shop = product.shop
+    if shop is not None and shop.user_id is not None:
+        notify_users(
+            [shop.user_id],
+            "🛒 Nouvelle commande",
+            f"{product.name} · {quantity} article(s) à préparer.",
+            data={"type": "order", "orderId": order.id},
+        )
+
     payload = order.to_dict()
     payload["whatsappUrl"] = _whatsapp_url(product.shop, order, item)
     return jsonify(payload), 201
@@ -196,4 +207,14 @@ def update_status(order_id):
         return jsonify({"error": "Action non autorisée"}), 403
 
     db.session.commit()
+
+    # Notifie l'acheteur du changement de statut de sa commande.
+    label = Order.STATUS_LABELS.get(order.status, order.status)
+    notify_users(
+        [order.user_id],
+        "📦 Commande mise à jour",
+        f"Votre commande {order.order_number} est : {label}.",
+        data={"type": "order", "orderId": order.id},
+        exclude_user_id=user.id,
+    )
     return jsonify(order.to_dict())
