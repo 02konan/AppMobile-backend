@@ -9,12 +9,16 @@ d'utiliser toutes les fonctions comme avant. Le blocage pourra être activé
 plus tard à partir de shop.subscription_active.
 """
 
+import secrets
 from datetime import timedelta
 
 from flask import Blueprint, jsonify, request
+from flask_jwt_extended import jwt_required
 
+from .. import cinetpay
 from ..auth_utils import require_roles
 from ..extensions import db
+from ..features import is_enabled
 from ..models import SubscriptionPayment, _utcnow
 
 subscription_bp = Blueprint(
@@ -96,8 +100,44 @@ def subscribe(user):
         status="pending",
     )
     db.session.add(payment)
-    db.session.commit()
+    db.session.flush()
 
+    # Paiement en ligne si la fonctionnalité est activée ET CinetPay configuré.
+    if is_enabled("mobileMoney") and cinetpay.is_configured():
+        txn = f"DIVIXSUB{payment.id}{secrets.token_hex(3)}"
+        payment.provider = "cinetpay"
+        payment.reference = txn
+        try:
+            payment_url, payment_token = cinetpay.init_payment(
+                transaction_id=txn,
+                amount=plan["amount"],
+                description=f"Abonnement DIVIX {plan['label']} — {user.shop.name}",
+                customer_name=user.name,
+                customer_phone=user.phone,
+            )
+        except Exception:
+            payment.status = "failed"
+            db.session.commit()
+            return (
+                jsonify({"error": "Le paiement n'a pas pu être initialisé."}),
+                502,
+            )
+        db.session.commit()
+        return (
+            jsonify(
+                {
+                    "payment": payment.to_dict(),
+                    "paymentConfigured": True,
+                    "transactionId": txn,
+                    "paymentUrl": payment_url,
+                    "paymentToken": payment_token,
+                }
+            ),
+            201,
+        )
+
+    # Sinon : paiement non branché -> demande enregistrée, activation admin.
+    db.session.commit()
     return (
         jsonify(
             {
@@ -112,3 +152,63 @@ def subscribe(user):
         ),
         201,
     )
+
+
+def _mark_paid(payment):
+    """Marque un paiement comme réussi et prolonge l'abonnement (idempotent)."""
+    if payment.status == "success":
+        return
+    payment.status = "success"
+    payment.paid_at = _utcnow()
+    if payment.shop is not None:
+        activate_subscription(payment.shop, payment.plan, payment.days)
+    db.session.commit()
+
+
+def _sync_payment_status(payment):
+    """Interroge CinetPay (source de vérité) et met à jour le paiement."""
+    if payment.reference is None:
+        return payment.status
+    result = cinetpay.check_payment(payment.reference)
+    status = result["status"]
+    if status == "ACCEPTED":
+        _mark_paid(payment)
+    elif status == "REFUSED" and payment.status == "pending":
+        payment.status = "failed"
+        db.session.commit()
+    return payment.status
+
+
+@subscription_bp.get("/payment/<transaction_id>")
+@jwt_required()
+def payment_status(transaction_id):
+    """Consulté par l'app après le retour de la page de paiement."""
+    payment = SubscriptionPayment.query.filter_by(
+        reference=transaction_id
+    ).first()
+    if payment is None:
+        return jsonify({"error": "Paiement introuvable"}), 404
+    _sync_payment_status(payment)
+    return jsonify(
+        {
+            "status": payment.status,
+            "active": payment.shop.subscription_active if payment.shop else False,
+            "expiresAt": payment.shop.subscription_expires_at.isoformat()
+            if payment.shop and payment.shop.subscription_expires_at
+            else None,
+        }
+    )
+
+
+@subscription_bp.post("/payment/notify")
+def payment_notify():
+    """Webhook serveur-à-serveur CinetPay. On ne fait jamais confiance au corps
+    du message : on revérifie la transaction via l'API /check."""
+    data = request.form.to_dict() or request.get_json(silent=True) or {}
+    txn = data.get("cpm_trans_id") or data.get("transaction_id")
+    if not txn:
+        return jsonify({"error": "transaction_id manquant"}), 400
+    payment = SubscriptionPayment.query.filter_by(reference=txn).first()
+    if payment is not None:
+        _sync_payment_status(payment)
+    return jsonify({"ok": True})
