@@ -505,3 +505,15 @@ CREATE TABLE device_tokens (
     FOREIGN KEY (user_id) REFERENCES users (id)
     ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB;
+
+-- ============================================================
+-- DIVIX — Feature flags
+-- ============================================================
+
+CREATE TABLE feature_flags (
+  `key`      VARCHAR(60)  NOT NULL,
+  enabled    TINYINT(1)   NOT NULL DEFAULT 1,
+  updated_at TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
+                          ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`key`)
+) ENGINE=InnoDB;

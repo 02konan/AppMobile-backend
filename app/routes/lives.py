@@ -6,6 +6,7 @@ from flask_jwt_extended import jwt_required
 from .. import agora
 from ..auth_utils import current_user, require_roles
 from ..extensions import db
+from ..features import is_enabled, require_feature
 from ..models import Live, LiveMessage, LiveViewer, Product, live_products
 from ..push import notify_all
 
@@ -96,6 +97,9 @@ def get_live(live_id):
 @lives_bp.post("")
 @require_roles("merchant")
 def create_live(user):
+    err = require_feature("lives")
+    if err:
+        return err
     if user.shop is None:
         return jsonify({"error": "Aucune boutique pour ce compte"}), 404
 
@@ -235,6 +239,9 @@ def live_token(live_id):
     - Le commerçant propriétaire peut demander un jeton `broadcaster`.
     - Tout le monde (connecté ou non) peut obtenir un jeton `viewer`.
     """
+    err = require_feature("lives")
+    if err:
+        return err
     live = db.session.get(Live, live_id)
     if live is None:
         return jsonify({"error": "Live introuvable"}), 404
@@ -353,6 +360,9 @@ def viewer_leave(live_id):
 @lives_bp.post("/<int:live_id>/start")
 @require_roles("merchant")
 def start_live(user, live_id):
+    err = require_feature("lives")
+    if err:
+        return err
     live, error = _owned_live_or_error(user, live_id)
     if error:
         return error
@@ -367,13 +377,14 @@ def start_live(user, live_id):
     db.session.commit()
 
     # Notifie tout le monde (sauf le commerçant) qu'un live démarre.
-    shop_name = user.shop.name if user.shop else "Une boutique"
-    notify_all(
-        "Live en cours",
-        f"{shop_name} est en direct maintenant !",
-        data={"type": "live", "liveId": live.id},
-        exclude_user_id=user.id,
-    )
+    if is_enabled("notifyLiveStart"):
+        shop_name = user.shop.name if user.shop else "Une boutique"
+        notify_all(
+            "Live en cours",
+            f"{shop_name} est en direct maintenant !",
+            data={"type": "live", "liveId": live.id},
+            exclude_user_id=user.id,
+        )
     return jsonify(live.to_dict())
 
 
