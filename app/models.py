@@ -940,3 +940,46 @@ class FeatureFlag(db.Model):
     key = db.Column(db.String(60), primary_key=True)
     enabled = db.Column(db.Boolean, nullable=False, default=True)
     updated_at = db.Column(db.DateTime, default=_utcnow, onupdate=_utcnow)
+
+
+# ============================================================
+# DIVIX — Avis & notes produits
+# ============================================================
+
+
+class Review(db.Model):
+    """Avis d'un acheteur sur un produit (note 1-5 + commentaire).
+
+    Un seul avis par utilisateur et par produit (mis à jour si re-soumis).
+    La note et le nombre d'avis du produit sont recalculés à chaque écriture
+    (champs dénormalisés products.rating / products.review_count).
+    """
+
+    __tablename__ = "reviews"
+
+    id = db.Column(db.Integer, primary_key=True)
+    product_id = db.Column(
+        db.String(30), db.ForeignKey("products.id"), nullable=False
+    )
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    rating = db.Column(db.Integer, nullable=False)  # 1..5
+    comment = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, default=_utcnow)
+    updated_at = db.Column(db.DateTime, default=_utcnow, onupdate=_utcnow)
+
+    user = db.relationship("User", lazy=True)
+
+    __table_args__ = (
+        db.UniqueConstraint("product_id", "user_id", name="uq_review_user"),
+    )
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "productId": self.product_id,
+            "userId": self.user_id,
+            "userName": self.user.name if self.user else "Utilisateur",
+            "rating": self.rating,
+            "comment": self.comment,
+            "date": self.created_at.isoformat() if self.created_at else None,
+        }
