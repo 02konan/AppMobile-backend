@@ -120,10 +120,15 @@ def upload_file():
 def upload_video():
     """Envoi d'une vidéo courte (ReelShops). ≤ 30 s, hébergée sur Cloudinary.
 
+    Protégé par le flag ``reels`` (l'hébergement vidéo est coûteux).
+
     Renvoie l'URL de lecture, une miniature (générée par Cloudinary) et la
     durée détectée. La durée est validée côté serveur (Cloudinary) en plus de
     la validation côté app.
     """
+    err = require_feature("reels")
+    if err:
+        return err
     if "file" not in request.files:
         return jsonify({"error": "Aucun fichier envoyé"}), 400
     file = request.files["file"]

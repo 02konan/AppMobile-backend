@@ -10,6 +10,7 @@ from flask_jwt_extended import jwt_required
 
 from ..auth_utils import require_roles
 from ..extensions import db
+from ..features import is_enabled, require_feature
 from ..models import Product, Reel, reel_products
 from ..push import notify_all
 
@@ -60,6 +61,10 @@ def list_reels():
     Pagination : ?limit (défaut 20, max 50) et ?before=<id> (reels plus
     anciens que cet identifiant), pour un défilement infini côté app.
     """
+    # Fonctionnalité désactivée : feed vide (l'app masque aussi l'onglet).
+    if not is_enabled("reels"):
+        return jsonify([])
+
     query = Reel.query.filter_by(is_active=True)
 
     shop_id = request.args.get("shop", type=int)
@@ -115,6 +120,9 @@ def my_reels(user):
 @reels_bp.post("")
 @require_roles("merchant")
 def create_reel(user):
+    err = require_feature("reels")
+    if err:
+        return err
     if user.shop is None:
         return jsonify({"error": "Aucune boutique pour ce compte"}), 404
 
@@ -154,13 +162,14 @@ def create_reel(user):
     db.session.commit()
 
     # Notifie tout le monde (sauf le commerçant) de la nouvelle vidéo.
-    shop_name = user.shop.name if user.shop else "Une boutique"
-    notify_all(
-        "Nouveau ReelShop",
-        f"{shop_name} vient de publier une vidéo.",
-        data={"type": "reel", "reelId": reel.id},
-        exclude_user_id=user.id,
-    )
+    if is_enabled("notifyNewReel"):
+        shop_name = user.shop.name if user.shop else "Une boutique"
+        notify_all(
+            "Nouveau ReelShop",
+            f"{shop_name} vient de publier une vidéo.",
+            data={"type": "reel", "reelId": reel.id},
+            exclude_user_id=user.id,
+        )
     return jsonify(reel.to_dict()), 201
 
 

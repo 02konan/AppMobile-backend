@@ -924,3 +924,19 @@ class DeviceToken(db.Model):
             "userId": self.user_id,
             "platform": self.platform,
         }
+
+
+# ============================================================
+# DIVIX — Feature flags (activer/désactiver des fonctionnalités)
+# ============================================================
+
+
+class FeatureFlag(db.Model):
+    """Interrupteur d'une fonctionnalité. Seules les valeurs qui diffèrent du
+    défaut sont stockées ; le reste suit DEFAULT_FLAGS (voir app/features.py)."""
+
+    __tablename__ = "feature_flags"
+
+    key = db.Column(db.String(60), primary_key=True)
+    enabled = db.Column(db.Boolean, nullable=False, default=True)
+    updated_at = db.Column(db.DateTime, default=_utcnow, onupdate=_utcnow)
